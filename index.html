@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <title>Букваландия</title>
+  <meta name="description" content="Русский язык для 2–3 класса: уроки, питомец, призы">
+  <meta name="theme-color" content="#7C5CFF">
+  <meta name="mobile-web-app-capable" content="yes">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&display=swap&subset=cyrillic" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="app">
+    <header id="topbar"></header>
+    <main id="screen"></main>
+    <nav id="nav">
+      <button data-act="tab" data-arg="map"><span>🗺️</span>Карта</button>
+      <button data-act="tab" data-arg="pet"><span>🐾</span>Питомец</button>
+      <button data-act="tab" data-arg="shop"><span>🛍️</span>Магазин</button>
+      <button data-act="tab" data-arg="awards"><span>🏆</span>Награды</button>
+    </nav>
+  </div>
+  <div id="modal-root"></div>
+  <div id="toast-root"></div>
+  <script src="js/engine.js"></script>
+  <script src="js/data.js"></script>
+  <script src="js/rewards.js"></script>
+  <script src="js/pet.js"></script>
+  <script src="js/sound.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
