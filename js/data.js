@@ -700,7 +700,4 @@ const WORLDS = [
   },
 ];
 
-/* Плоские индексы */
-const LESSONS = {};
-WORLDS.forEach((w, wi) => w.lessons.forEach((l, li) => { l.world = w; l.wi = wi; l.li = li; LESSONS[l.id] = l; }));
-const TOTAL_STARS = WORLDS.reduce((s, w) => s + w.lessons.length * 3 + 3, 0);
+/* Индексы уроков всех предметов строятся в subjects.js */
