@@ -4,7 +4,7 @@
    ============================================================ */
 
 const KEY = 'bukvalandia_v1';   // ключ хранилища не меняем: в нём прогресс ребёнка
-const VERSION = 2;
+const VERSION = 3;
 const LESSON_LEN = 10;
 let S = null;               // состояние
 let TAB = 'map';
@@ -64,6 +64,12 @@ function migrate() {
     if (S.settings.dailyLimit === 500) S.settings.dailyLimit = 700; // предметов стало больше
     if (S.onboarded) S.seenSubjects = { ru: true };                 // покажем новость про Числоград
     else S.seenSubjects = { ru: true, math: true };
+  }
+  if ((S.v || 1) < 3) {
+    /* пороги роста питомца выросли (появился английский) — сохраняем достигнутую стадию */
+    const t = totalStars();
+    let st = 0; [0, 1, 20, 60, 130].forEach((at, i) => { if (t >= at) st = i; });
+    S.pet.maxStage = Math.max(S.pet.maxStage || 0, st);
   }
   S.v = VERSION;
 }
@@ -212,6 +218,8 @@ const ACH_TEST = {
   mul_all: () => mulLearned() >= MUL_FACTS.length,
   hero: () => SUBJ.ru.worlds.every(w => S.bosses[w.id]),
   mayor: () => SUBJ.math.worlds.every(w => S.bosses[w.id]),
+  en_all: () => SUBJ.en.worlds.every(w => S.bosses[w.id]),
+  stars300: () => totalStars() >= 300,
 };
 ALL_WORLDS.forEach(w => { ACH_TEST['boss_' + w.id] = () => !!S.bosses[w.id]; });
 const mulBox = (a, b) => (S.mul.facts[mulKey(a, b)] || {}).b || 0;
@@ -518,6 +526,7 @@ function openLessonSheet(id) {
       <div class="rule"><div class="rule-t">📘 Вспомни правило <button class="say" data-say="1" aria-label="Прочитать вслух">🔊</button></div><div class="rule-b">${les.rule}</div></div>
       <div class="goals"><span>⭐ 6 из 10 верно с первой попытки</span><span>⭐⭐ 8 из 10 — без ошибок и подсказок</span><span>⭐⭐⭐ 9 из 10 — без ошибок и подсказок</span></div>
       ${les.subject.id === 'math' && st >= 2 ? '<p class="small">📈 На 2+ звёздах примеры становятся сложнее.</p>' : ''}
+      ${les.subject.id === 'en' ? (Speech.enOk() ? '<p class="small">🔊 Слова звучат вслух. Нажимай 🔊 и 🐢 (медленно) сколько угодно раз!</p>' : '<p class="note">На этом устройстве не найден английский голос, поэтому задания на слух заменены чтением. Взрослым: как включить голос — ⚙️ → Настройки.</p>') : ''}
       ${rewardNote(r, les.subject, id)}`,
     buttons: [{ label: 'Закрыть', cls: 'ghost' }, { label: r.kind === 'review' ? 'Повторить 🔁' : st ? 'Пройти ещё раз' : 'Начать урок', cls: 'primary big', onClick: () => { startSession('lesson', id); } }],
   });
@@ -683,9 +692,15 @@ function showTask() {
   const body = $('#lBody');
   if (L.mode !== 'boss') $('#lProg').style.width = (100 * L.pos / L.queue.length) + '%';
   let show = '';
-  if (t.word) show = `<div class="word" id="word">${t.word.before}<span class="gap" id="gap">?</span>${t.word.after}</div>`;
+  if (t.word) show = `<div class="${t.small ? 'sentence' : 'word'}" id="word">${t.word.before}<span class="gap" id="gap">?</span>${t.word.after}</div>`;
   else if (t.kind === 'input') show = `<div class="mshow">${t.show.replace('[?]', '<span class="inbox" id="inbox"></span>')}</div>`;
-  else if (t.show) show = `<div class="${t.small ? 'sentence' : t.show.startsWith('<div class="eq">') || t.show.startsWith('<svg') || t.show.startsWith('<div class="grp') ? 'mshow' : 'word'}">${t.show}</div>`;
+  else if (t.show) show = `<div class="${t.small ? 'sentence' : t.show.startsWith('<div') || t.show.startsWith('<svg') ? 'mshow' : 'word'}">${t.show}</div>`;
+  /* картинка и кнопки «послушать» (английский) */
+  const canSay = !!t.say && Speech.enOk();
+  if (t.pic || canSay) {
+    show = `<div class="en-show">${t.pic ? `<div class="pic">${t.pic}</div>` : ''}${show}
+      ${canSay ? '<div class="say-row"><button class="big-say" data-act="sayEn" aria-label="Послушать">🔊</button><button class="slow-say" data-act="sayEnSlow" aria-label="Медленно">🐢</button></div>' : ''}</div>`;
+  }
   let ans = '';
   if (t.kind === 'input') {
     ans = `<div class="keypad">${[1, 2, 3, 4, 5, 6, 7, 8, 9].map(k => `<button data-act="key" data-arg="${k}">${k}</button>`).join('')}
@@ -693,21 +708,22 @@ function showTask() {
       <button class="kok" data-act="key" data-arg="ok" id="kok" disabled aria-label="Проверить">✓</button></div>`;
   }
   if (t.kind === 'choice') {
-    const short = t.options.every(o => o.label.length <= 3);
+    const short = t.options.every(o => o.html || o.label.length <= 3);
     const cls = short ? 'opts letters' : t.grid ? 'opts grid2' : (t.options.length === 2 && t.options.every(o => o.label.length <= 16)) ? 'opts two' : 'opts list';
-    ans = `<div class="${cls}">${t.options.map(o => `<button class="opt" data-act="ans" data-arg="${U.esc(o.v)}">${U.esc(o.label)}</button>`).join('')}</div>`;
+    ans = `<div class="${cls}">${t.options.map(o => `<button class="opt" data-act="ans" data-arg="${U.esc(o.v)}">${o.html ? o.label : U.esc(o.label)}</button>`).join('')}</div>`;
   } else if (t.kind === 'stress') {
     ans = `<div class="stress">${t.letters.map((c, i) => U.isV(c) ? `<button class="sv" data-act="ans" data-arg="${i}">${c}</button>` : `<span>${c}</span>`).join('')}</div>`;
   } else if (t.kind === 'tap') {
     ans = `<div class="tapline">${t.tokens.map((w, i) => `<button class="tw" data-act="ans" data-arg="${i}">${U.esc(w)}</button>`).join('')}</div>`;
   } else if (t.kind === 'order') {
-    ans = `<div class="ord-line" id="ordLine"><span class="ph">Нажимай на слова по порядку</span></div>
-      <div class="ord-pool" id="ordPool">${t.pieces.map((p, i) => `<button class="piece" data-act="ordAdd" data-arg="${i}">${U.esc(p)}</button>`).join('')}</div>`;
+    ans = `<div class="ord-line ${t.join === '' ? 'letters' : ''}" id="ordLine"><span class="ph">${t.join === '' ? 'Нажимай на буквы по порядку' : 'Нажимай на слова по порядку'}</span></div>
+      <div class="ord-pool ${t.join === '' ? 'letters' : ''}" id="ordPool">${t.pieces.map((p, i) => `<button class="piece" data-act="ordAdd" data-arg="${i}">${U.esc(p)}</button>`).join('')}</div>`;
   }
   body.innerHTML = `${e.retry ? '<div class="retry-tag">🔁 Исправь ошибку</div>' : e.fromMistake || e.fix ? '<div class="retry-tag fix">🩹 Повторение</div>' : ''}
     <div class="prompt"><span>${t.prompt}</span>${Speech.available() && S.settings.tts ? `<button class="say" data-act="say" aria-label="Прочитать вслух">🔊</button>` : ''}</div>
     ${show}<div class="ans">${ans}</div><div class="hintbox" id="hintbox"></div>`;
   body.classList.remove('enter'); void body.offsetWidth; body.classList.add('enter');
+  if (canSay && t.auto) setTimeout(() => { if (L && L.queue[L.pos] === e && !L.answered) Speech.sayEn(t.say); }, 450);
   const foot = $('#lFoot');
   foot.innerHTML = `${L.mode !== 'boss' ? '<button class="btn hint" data-act="hint">💡 Подсказка</button>' : ''}
     ${t.kind === 'order' ? '<button class="btn primary" data-act="ordCheck" id="ordCheck" disabled>Проверить</button>' : ''}`;
@@ -722,7 +738,9 @@ function sayTask() {
     div.querySelectorAll('svg,.b10,.tenf,.grp').forEach(x => x.remove());
     extra = div.textContent.replace(/(\d{1,2}):(\d{2})/g, '$1 $2').replace(/\[\?\]|\?/g, ' сколько ').replace(/·/g, ' умножить на ')
       .replace(/ : /g, ' разделить на ').replace(/−/g, ' минус ').replace(/\+/g, ' плюс ').replace(/=/g, ' равно ').replace(/○/g, ' ').replace(/\bx\b/g, ' икс ');
-  } else if (t.small && t.show) extra = t.show;
+  } else if (t.small && t.show && !(L.subject && L.subject.id === 'en')) extra = t.show;
+  const plain = t.prompt.replace(/<[^>]+>/g, '');
+  if (L.subject && L.subject.id === 'en' && !/[а-яё]/i.test(plain) && Speech.enOk()) { Speech.sayEn(plain); return; }
   Speech.say(t.prompt + (extra ? '. ' + extra : ''));
 }
 
@@ -742,7 +760,7 @@ function useHint() {
     const wrong = $$('#lBody .tw').filter(b => +b.dataset.arg !== t.answer && !b.disabled);
     U.sample(wrong, Math.ceil(wrong.length / 2)).forEach(b => { b.disabled = true; b.classList.add('gone'); });
   } else if (t.kind === 'order') {
-    const first = t.answers[0].split(' ')[0];
+    const first = t.join === '' ? t.answers[0][0] : t.answers[0].split(' ')[0];
     L.ord = [];
     const idx = t.pieces.findIndex(p => p === first);
     if (idx >= 0) L.ord.push(idx);
@@ -760,7 +778,7 @@ function useHint() {
 function renderOrder() {
   const t = curTask().t;
   const line = $('#ordLine'), pool = $('#ordPool');
-  line.innerHTML = L.ord.length ? L.ord.map((i, k) => `<button class="piece in" data-act="ordDel" data-arg="${k}">${U.esc(t.pieces[i])}</button>`).join('') : '<span class="ph">Нажимай на слова по порядку</span>';
+  line.innerHTML = L.ord.length ? L.ord.map((i, k) => `<button class="piece in" data-act="ordDel" data-arg="${k}">${U.esc(t.pieces[i])}</button>`).join('') : `<span class="ph">${t.join === '' ? 'Нажимай на буквы по порядку' : 'Нажимай на слова по порядку'}</span>`;
   $$('.piece', pool).forEach(b => { b.classList.toggle('used', L.ord.includes(+b.dataset.arg)); });
   $('#ordCheck').disabled = L.ord.length !== t.pieces.length;
 }
@@ -772,7 +790,7 @@ function answer(val) {
   let ok;
   if (t.kind === 'choice') ok = String(val) === String(t.answer);
   else if (t.kind === 'stress' || t.kind === 'tap') ok = +val === t.answer;
-  else if (t.kind === 'order') ok = t.answers.includes(L.ord.map(i => t.pieces[i]).join(' '));
+  else if (t.kind === 'order') ok = t.answers.includes(L.ord.map(i => t.pieces[i]).join(t.join ?? ' '));
   else if (t.kind === 'input') ok = String(Number(val)) === String(Number(t.answer));
   L.answered = true;
   const fast = Date.now() - L.shown < 1300;
@@ -867,6 +885,9 @@ function answer(val) {
     ${exp ? `<div class="fb-exp">${exp}</div>` : ''}
     <button class="btn ${ok ? 'primary' : 'warm'} big" data-act="next">${ok ? 'Дальше' : 'Понятно'}</button></div>`;
   fb.className = 'feedback show ' + (ok ? 'ok' : 'bad');
+  /* английский: после ответа ещё раз звучит правильное слово или фраза */
+  const after = t.sayAfter || t.say;
+  if (after && Speech.enOk()) setTimeout(() => Speech.sayEn(after), ok ? 350 : 700);
   const hb = $('[data-act="hint"]'); if (hb) hb.disabled = true;
   save();
 }
@@ -1546,6 +1567,8 @@ function pSettings() {
     ${tg('sound', s.sound, 'Звуки', '')}
     ${tg('tts', s.tts, 'Озвучка заданий (кнопка 🔊)', Speech.available() ? '' : 'На этом устройстве синтез речи недоступен')}
     ${tg('openAll', s.openAll, 'Открыть все темы', 'Можно сразу выбрать любую тему (например, для 3 класса). Боссы всё равно требуют 2 звезды в темах мира.')}
+    <div class="card"><b>🔤 Английский голос</b><p class="small">${Speech.enOk() ? `Найден: ${U.esc(Speech.enVoice.name)} (${U.esc(Speech.enVoice.lang)}). Нажмите, чтобы послушать.` : 'Английский голос не найден — задания на слух заменяются чтением. На Android: Настройки → Специальные возможности → Синтез речи → «Синтезатор речи Google» → установите английский (Великобритания).'}</p>
+      <button class="btn" data-act="voiceTest">🔊 Проверить голос</button></div>
     <button class="btn" data-act="pinChange">🔐 Сменить PIN-код</button>
   </div>`;
 }
@@ -1659,6 +1682,13 @@ const ACTIONS = {
   boss: a => { Sound.play('tap'); openBossSheet(a); },
   fix: () => { Sound.play('tap'); startSession('fix', S.subject); },
   mul: () => { Sound.play('tap'); startSession('mul'); },
+  sayEn: () => { if (L) Speech.sayEn(curTask().t.say); },
+  sayEnSlow: () => { if (L) Speech.sayEn(curTask().t.say, true); },
+  voiceTest: () => {
+    if (!Speech.enOk()) { toast('Английский голос не найден. Установите «Синтезатор речи Google» и английский язык в нём.'); return; }
+    Speech.sayEn('Hello! Let\'s learn English together!');
+    toast(`🔊 Голос: ${U.esc(Speech.enVoice.name)} (${Speech.enVoice.lang})`);
+  },
   mulAgain: () => { Back.done(); closeLesson(); setTimeout(() => startSession('mul'), 50); },
   subject: a => { if (!SUBJ[a] || S.subject === a) return; S.subject = a; Sound.play('tap'); save(); $('#screen').scrollTop = 0; render(); },
   key: a => {
@@ -1752,8 +1782,8 @@ function announceSubjects() {
     Sound.play('level'); confetti();
     modal({
       cls: 'celebrate',
-      html: `<div class="m-icon">${s.icon}</div><h2>Открылся ${s.land}!</h2>
-        <p>Кляксус добрался и до соседней страны — <b>${s.land}</b>. Там тебя ждут новые миры, боссы и звёзды.</p>
+      html: `<div class="m-icon">${s.icon}</div><h2>Новая страна: ${s.land}!</h2>
+        <p>Кляксус добрался и сюда! <b>${s.land}</b> (${s.name.toLowerCase()}) ждёт тебя: новые миры, боссы и звёзды.</p>
         <p>Все монеты, питомец и покупки — общие. Переключай предметы вверху карты.</p>
         <p class="small">🎓 Позанимайся всеми предметами в один день — получишь бонус «Учёный день»!</p>`,
       buttons: [{ label: 'Не сейчас', cls: 'ghost' }, { label: 'Посмотреть!', cls: 'primary', onClick: () => { S.subject = s.id; TAB = 'map'; save(); render(); } }],

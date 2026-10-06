@@ -6,6 +6,7 @@
 const SUBJECTS = [
   { id: 'ru', name: 'Русский', icon: '📖', land: 'Букваландия', worlds: WORLDS },
   { id: 'math', name: 'Математика', icon: '🔢', land: 'Числоград', worlds: MATH_WORLDS },
+  { id: 'en', name: 'Английский', icon: '🔤', land: 'Остров Hello', worlds: EN_WORLDS },
 ];
 const SUBJ = {};
 const ALL_WORLDS = [];

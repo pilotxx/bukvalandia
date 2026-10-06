@@ -1,8 +1,8 @@
 /* Букваландия — офлайн-режим. При обновлении файлов увеличьте номер версии. */
-const CACHE = 'bukvalandia-v2';
+const CACHE = 'bukvalandia-v3';
 const FILES = [
   './', 'index.html', 'manifest.webmanifest', 'css/style.css',
-  'js/engine.js', 'js/data.js', 'js/math.js', 'js/subjects.js', 'js/rewards.js', 'js/pet.js', 'js/sound.js', 'js/app.js',
+  'js/engine.js', 'js/data.js', 'js/math.js', 'js/english.js', 'js/subjects.js', 'js/rewards.js', 'js/pet.js', 'js/sound.js', 'js/app.js',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png',
 ];
 

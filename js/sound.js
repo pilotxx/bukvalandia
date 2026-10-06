@@ -47,16 +47,34 @@ const Sound = {
 const Speech = {
   enabled: true,
   voice: null,
+  enVoice: null,
   init() {
     if (!('speechSynthesis' in window)) return;
     const pick = () => {
-      const vs = speechSynthesis.getVoices().filter(v => /^ru/i.test(v.lang));
+      const all = speechSynthesis.getVoices();
+      const vs = all.filter(v => /^ru/i.test(v.lang));
       this.voice = vs.find(v => /google|милена|milena|irina|ирина/i.test(v.name)) || vs[0] || null;
+      /* Английский: британский вариант, как в школе; иначе американский; иначе любой английский */
+      const en = all.filter(v => /^en/i.test(v.lang));
+      const gb = en.filter(v => /en[-_]GB/i.test(v.lang));
+      const us = en.filter(v => /en[-_]US/i.test(v.lang));
+      const good = list => list.find(v => /google|natural|enhanced|premium/i.test(v.name)) || list.find(v => v.localService) || list[0];
+      this.enVoice = good(gb) || good(us) || good(en) || null;
     };
     pick();
     speechSynthesis.onvoiceschanged = pick;
   },
   available: () => 'speechSynthesis' in window,
+  enOk() { return this.available() && !!this.enVoice; },
+  /* Английская речь звучит всегда (это часть задания), даже если озвучка русских заданий выключена */
+  sayEn(text, slow = false) {
+    if (!this.enOk()) return;
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.voice = this.enVoice; u.lang = this.enVoice.lang;
+    u.rate = slow ? 0.55 : 0.85; u.pitch = 1.05;
+    speechSynthesis.speak(u);
+  },
   say(html) {
     if (!this.enabled || !this.available()) return;
     const div = document.createElement('div');
