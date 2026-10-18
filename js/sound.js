@@ -75,6 +75,20 @@ const Speech = {
     u.rate = slow ? 0.55 : 0.85; u.pitch = 1.05;
     speechSynthesis.speak(u);
   },
+  /* Голос питомца: выше обычного («мультяшный»), с возрастом чуть ниже; шёпот — тише и медленнее.
+     Звучит, только если в настройках включён «Голос питомца» (не зависит от озвучки заданий) */
+  petOn: true,
+  sayPet(text, stage = 2, whisper = false) {
+    if (!this.petOn || !this.available()) return;
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(String(text).replace(/[^\p{L}\p{N}\s.,!?…:;—–\-«»"']/gu, ' ').replace(/\s+/g, ' ').trim());
+    u.lang = 'ru-RU';
+    u.pitch = Math.min(2, [1.7, 1.7, 1.55, 1.4, 1.3][Math.max(0, Math.min(4, stage))] - (whisper ? 0.1 : 0));
+    u.rate = whisper ? 0.8 : 1.02;
+    u.volume = whisper ? 0.55 : 1;
+    if (this.voice) u.voice = this.voice;
+    speechSynthesis.speak(u);
+  },
   say(html) {
     if (!this.enabled || !this.available()) return;
     const div = document.createElement('div');

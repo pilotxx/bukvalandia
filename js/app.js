@@ -4,7 +4,7 @@
    ============================================================ */
 
 const KEY = 'bukvalandia_v1';   // ключ хранилища не меняем: в нём прогресс ребёнка
-const VERSION = 3;
+const VERSION = 4;
 const LESSON_LEN = 10;
 let S = null;               // состояние
 let TAB = 'map';
@@ -26,19 +26,22 @@ function defaults() {
     coins: 0, earned: 0, xp: 0,
     stars: {}, stats: {}, bosses: {},
     history: {}, streak: { last: '', count: 0, best: 0 }, bestCombo: 0,
-    pet: { species: 'dragon', name: '', color: null, hat: null, glasses: null, neck: null, satiety: 70, tick: Date.now(), stageSeen: 0, maxStage: 0 },
-    owned: { th_sky: true }, food: {}, hidden: {},
+    pet: { species: 'dragon', name: '', color: null, hat: null, glasses: null, neck: null, body: null, feet: null, back: null, costume: null, satiety: 70, tick: Date.now(), stageSeen: 0, maxStage: 0, microSeen: 0 },
+    owned: { th_sky: true, ball: true }, food: {}, hidden: {},
+    room: { pos: {} }, costumes: {}, riddle: { day: '', n: 0 }, greetDay: '',
+    piggy: { goal: null, saved: 0 },
+    gameProg: {},
     theme: 'sky', ach: {}, mistakes: [],
     mul: { facts: {}, unlocked: 2 },
     weekly: { week: '', ids: [], prog: {}, done: {}, bonus: false, days: [] },
-    counters: { lessons: 0, correct: 0, wrong: 0, perfect: 0, fixed: 0, bought: 0, fed: 0, weeklyAll: 0, polyDays: 0 },
+    counters: { lessons: 0, correct: 0, wrong: 0, perfect: 0, fixed: 0, bought: 0, fed: 0, weeklyAll: 0, polyDays: 0, play: 0, riddles: 0, piggy: 0 },
     records: { balloons: 0, memory: 0 },
-    settings: { sound: true, tts: true, dailyLimit: 700, breakMin: 20, openAll: false },
+    settings: { sound: true, tts: true, petVoice: true, dailyLimit: 700, breakMin: 20, openAll: false, sleepFrom: 21, piggyShare: 50, autoBackup: true },
     parent: {
       pin: null, requests: [],
       prizes: [{ id: 'p1', name: 'Выбрать десерт на ужин', price: 1000 }, { id: 'p2', name: '30 минут мультиков', price: 1500 }, { id: 'p3', name: 'Поход в кино', price: 6000 }],
     },
-    lastBackup: 0, limitToast: '',
+    lastBackup: 0, lastAutoDay: '', limitToast: '',
   };
 }
 function merge(d, o) {
@@ -71,11 +74,20 @@ function migrate() {
     let st = 0; [0, 1, 20, 60, 130].forEach((at, i) => { if (t >= at) st = i; });
     S.pet.maxStage = Math.max(S.pet.maxStage || 0, st);
   }
+  if ((S.v || 1) < 4) {
+    /* версия 4: комната, копилка, взросление по шагам — мяч в подарок, старые шаги роста не показываем заново */
+    S.owned.ball = true;
+    S.pet.microSeen = PET_MICRO.filter(m => totalStars() >= m.at).length;
+  }
   S.v = VERSION;
 }
 function save() {
   try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { /* хранилище недоступно */ }
 }
+/* Автосохранение: каждые 30 секунд и при сворачивании; просим браузер не стирать данные сам */
+setInterval(() => { if (S) save(); }, 30000);
+window.addEventListener('pagehide', () => { if (S) save(); });
+try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) { /* */ }
 function day() {
   const k = U.dayKey();
   if (!S.history[k]) {
@@ -95,12 +107,17 @@ const petStage = () => Math.max(petStageRaw(), S.pet.maxStage || 0);
 const curSubj = () => SUBJ[S.subject] || SUBJECTS[0];
 const petColor = () => (S.pet.color && ITEMS[S.pet.color]) ? ITEMS[S.pet.color].color : PET_SPECIES[S.pet.species].color;
 const petMood = () => S.pet.satiety < 30 ? 'sad' : 'happy';
-const icon = id => id && ITEMS[id] ? ITEMS[id].icon : null;
+const itemOf = id => id && ITEMS[id] ? ITEMS[id] : null;
 function petSVG(extra = {}) {
-  return Pet.svg(Object.assign({
-    species: S.pet.species, color: petColor(), stage: petStage(),
-    hat: icon(S.pet.hat), glasses: icon(S.pet.glasses), neck: icon(S.pet.neck), mood: petMood(),
-  }, extra));
+  const c = activeCostume();
+  const o = {
+    species: S.pet.species, color: petColor(), stage: petStage(), grow: totalStars(),
+    hat: itemOf(S.pet.hat), glasses: itemOf(S.pet.glasses), neck: itemOf(S.pet.neck),
+    body: itemOf(S.pet.body), feet: itemOf(S.pet.feet), back: itemOf(S.pet.back),
+    mood: petMood(), setIcon: c ? c.icon : null,
+  };
+  Object.keys(extra).forEach(k => { if (extra[k] !== undefined) o[k] = extra[k]; });
+  return Pet.svg(o);
 }
 const streakNow = () => {
   const y = U.dayKey(new Date(Date.now() - 86400000));
@@ -174,11 +191,18 @@ function earnCoins(n, bypass = false) {
     if (lim > 0 && d.coins >= lim && S.limitToast !== U.dayKey()) {
       S.limitToast = U.dayKey();
       celebrate(() => modal({
-        html: `<div class="m-icon">🌙</div><h2>Монетки на сегодня собраны!</h2><p>Ты отлично потрудился. Звёзды и опыт продолжают копиться, а новые монетки будут завтра.</p>`,
+        html: `<div class="m-icon">🌙</div><h2>Монетки на сегодня собраны!</h2><p>Отличная работа! Звёзды и опыт продолжают копиться, а новые монетки будут завтра.</p>`,
       }));
     }
   }
-  S.coins += add; S.earned += add;
+  /* Доля заработка — в копилку на выбранную цель (сверх цены не копится) */
+  const g = piggyGoal();
+  const pig = g ? Math.min(Math.round(add * (S.settings.piggyShare || 0) / 100), Math.max(0, g.price - S.piggy.saved)) : 0;
+  if (pig) {
+    S.piggy.saved += pig;
+    if (S.piggy.saved >= g.price) celebrate(() => { Sound.play('star'); modal({ cls: 'celebrate', html: `<div class="m-icon">🐷</div><h2>Копилка полна!</h2><p>Накоплено на «${U.esc(g.name)}»! Загляни в магазин → 🐷 Копилка.</p>`, buttons: [{ label: 'Ура!', cls: 'primary', onClick: () => { TAB = 'shop'; SHOP_TAB = 'prizes'; render(); } }] }); });
+  }
+  S.coins += add - pig; S.earned += add;
   return add;
 }
 function addXP(n) {
@@ -220,6 +244,9 @@ const ACH_TEST = {
   mayor: () => SUBJ.math.worlds.every(w => S.bosses[w.id]),
   en_all: () => SUBJ.en.worlds.every(w => S.bosses[w.id]),
   stars300: () => totalStars() >= 300,
+  play50: () => (S.counters.play || 0) >= 50, riddle10: () => (S.counters.riddles || 0) >= 10,
+  costume1: () => Object.keys(S.costumes).length >= 1, costume5: () => Object.keys(S.costumes).length >= 5,
+  piggy1: () => (S.counters.piggy || 0) >= 1,
 };
 ALL_WORLDS.forEach(w => { ACH_TEST['boss_' + w.id] = () => !!S.bosses[w.id]; });
 const mulBox = (a, b) => (S.mul.facts[mulKey(a, b)] || {}).b || 0;
@@ -268,6 +295,7 @@ function weekly(ev, n = 1) {
   if (!S.weekly.bonus && S.weekly.ids.length && S.weekly.ids.every(id => S.weekly.done[id])) {
     S.weekly.bonus = true;
     S.counters.weeklyAll++;
+    autoBackup();
     const item = EXCLUSIVE.find(x => !S.owned[x.id]);
     if (item) S.owned[item.id] = true;
     celebrate(() => {
@@ -396,6 +424,7 @@ function applyTheme() {
   document.documentElement.dataset.theme = S.theme || 'sky';
   Sound.enabled = S.settings.sound;
   Speech.enabled = S.settings.tts;
+  Speech.petOn = S.settings.petVoice;
 }
 function render() {
   applyTheme();
@@ -407,6 +436,7 @@ function render() {
   else if (TAB === 'shop') scr.innerHTML = renderShop();
   else if (TAB === 'awards') scr.innerHTML = renderAwards();
   scr.dataset.tab = TAB;
+  if (TAB === 'pet') Room.mount(); else Room.unmount();
   if (scr.dataset.keep === TAB) scr.scrollTop = y;
   scr.dataset.keep = TAB;
   $$('#nav button').forEach(b => b.classList.toggle('on', b.dataset.arg === TAB));
@@ -426,6 +456,7 @@ function renderTop() {
       <span class="chip ${st ? 'fire' : 'cold'}" title="Дней подряд">🔥<b>${st}</b></span>
       <span class="chip" id="chip-stars" title="Звёзды">⭐<b>${totalStars()}</b></span>
       <span class="chip coin" id="chip-coins" title="Монеты"><i class="ci"></i><b>${fmt(S.coins)}</b></span>
+      ${piggyGoal() ? `<button class="chip pig" id="chip-pig" data-act="piggyOpen" title="Копилка">🐷<b>${Math.min(100, Math.floor(100 * S.piggy.saved / piggyGoal().price))}%</b></button>` : ''}
     </div>
     <button class="gear" data-act="parent" aria-label="Для взрослых">⚙️</button>`;
 }
@@ -436,7 +467,8 @@ function renderTop() {
 function petPhrase() {
   const n = U.esc(S.name || 'друг');
   if (petStage() === 0) return 'Я ещё в яйце! Получи первую звезду — и я вылуплюсь 🥚';
-  if (S.pet.satiety < 30) return `${n}, я проголодался… Покорми меня, пожалуйста! 🍎`;
+  if (Room.night()) return 'Уже поздно… Пора спать! 🌙 Завтра продолжим.';
+  if (S.pet.satiety < 30) return `${n}, я хочу кушать… Покорми меня, пожалуйста! 🍎`;
   const subj = curSubj();
   if (readyMistakes(subj).length >= 3) return 'Давай исправим вчерашние ошибки — так лучше запоминается! 🩹';
   const rec = recommendLesson(subj);
@@ -503,7 +535,7 @@ function rewardNote(r, subj, exceptId) {
   const pct = Math.round(r.f * 100);
   let note = '';
   if (r.kind === 'review') note = '🔁 <b>Пора повторить!</b> Прошла неделя — повторение сейчас лучше всего закрепит знания. Награда полная!';
-  else if (r.kind === 'tired') note = `💤 Сегодня ты уже ${r.today === 1 ? 'проходил эту тему' : `проходил эту тему ${r.today} ${U.plural(r.today, 'раз', 'раза', 'раз')}`}. Монет и опыта будет <b>${pct}%</b>. Завтра награда восстановится.`;
+  else if (r.kind === 'tired') note = `💤 Сегодня мы уже ${r.today === 1 ? 'проходили эту тему' : `проходили эту тему ${r.today} ${U.plural(r.today, 'раз', 'раза', 'раз')}`}. Монет и опыта будет <b>${pct}%</b>. Завтра награда восстановится.`;
   else if (r.kind === 'mastered') { const left = Math.max(1, Math.ceil(REVIEW_DAYS - r.days)); note = `✅ Тема освоена! За повтор — <b>${pct}%</b> монет. Через ${left} ${U.plural(left, 'день', 'дня', 'дней')} появится 🔁 «Пора повторить» с полной наградой.`; }
   if (!note || r.kind === 'review') return note ? `<p class="note">${note}</p>` : '';
   const rec = recommendLesson(subj, exceptId);
@@ -544,7 +576,7 @@ function openBossSheet(wid) {
     html: `<div class="boss-intro"><div class="boss-face">${w.boss.emoji}</div><h2>${w.boss.name}</h2><p>${w.boss.story}</p>
       <div class="goals"><span>❤️ У тебя 3 жизни</span><span>💥 Здоровье босса: ${w.boss.hp}</span><span>🚫 Без подсказок</span></div>
       ${!ready ? `<div class="need"><b>Чтобы сразиться, получи по 2 звезды в темах:</b>${need.map(l => `<div>${l.icon} ${l.title} — ${'★'.repeat(S.stars[l.id] || 0)}${'☆'.repeat(2 - Math.min(2, S.stars[l.id] || 0))}</div>`).join('')}</div>` : ''}
-      ${won ? `<p class="note">Ты уже победил этого босса. Можно сразиться снова ради тренировки — монет будет ${Math.round(br.f * 100)}%.</p>` : `<p class="reward">Награда: ${150 + 60 * wi} <i class="ci"></i>${w.subject.worlds[wi + 1] ? ' и новый мир!' : ''}</p>`}</div>`,
+      ${won ? `<p class="note">Этот босс уже побеждён. Можно сразиться снова ради тренировки — монет будет ${Math.round(br.f * 100)}%.</p>` : `<p class="reward">Награда: ${150 + 60 * wi} <i class="ci"></i>${w.subject.worlds[wi + 1] ? ' и новый мир!' : ''}</p>`}</div>`,
     buttons: ready ? [{ label: 'Не сейчас', cls: 'ghost' }, { label: 'В бой! ⚔️', cls: 'primary big', onClick: () => startSession('boss', wid) }] : [{ label: 'Понятно', cls: 'primary' }],
   });
 }
@@ -949,7 +981,7 @@ function commonFinish() {
     earnCoins(60, true);
     celebrate(() => {
       Sound.play('star');
-      modal({ cls: 'celebrate', html: `<div class="m-icon">🎓</div><h2>Учёный день!</h2><p>Сегодня ты позанимался всеми предметами: ${SUBJECTS.map(s => s.icon + ' ' + s.name).join(', ')}.</p><p class="reward">+60 <i class="ci"></i></p>`, buttons: [{ label: 'Ура!', cls: 'primary' }] });
+      modal({ cls: 'celebrate', html: `<div class="m-icon">🎓</div><h2>Учёный день!</h2><p>Сегодня были занятия по всем предметам: ${SUBJECTS.map(s => s.icon + ' ' + s.name).join(', ')}.</p><p class="reward">+60 <i class="ci"></i></p>`, buttons: [{ label: 'Ура!', cls: 'primary' }] });
     });
   }
 }
@@ -983,7 +1015,7 @@ function finishLesson() {
         `Верно с первой попытки: <b>${L.first} из ${L.total}</b>`,
         `Выучено примеров: <b>${learned} из ${MUL_FACTS.length}</b>${learned > L.mulStart ? ` <span class="up">+${learned - L.mulStart}</span>` : ''}`,
         ...(opened ? [opened] : []),
-        ...(L.factor < 1 ? [`<span class="muted">Сегодня ты уже тренировался — монет ${Math.round(L.factor * 100)}%. Опыт и прогресс таблицы засчитаны полностью!</span>`] : []),
+        ...(L.factor < 1 ? [`<span class="muted">Сегодня тренировка уже была — монет ${Math.round(L.factor * 100)}%. Опыт и прогресс таблицы засчитаны полностью!</span>`] : []),
       ], coins: got, raw: Math.round(L.coins * L.petMul), xp: L.xp, retry: 'mul', againAct: 'mulAgain',
       tip: 'Пример считается выученным, когда ты решишь его верно в 3 разных тренировках подряд. Лучше всего тренироваться понемногу каждый день!',
     });
@@ -1031,14 +1063,14 @@ function finishBoss(win) {
     if (L.fresh) weekly('lesson');
     const reward = first ? 150 + 60 * wi : Math.round(30 * L.factor);
     const got = earnCoins(L.coins * L.petMul) + earnCoins(reward, true);
-    if (first) { S.bosses[w.id] = true; weekly('star', 3); }
+    if (first) { S.bosses[w.id] = true; weekly('star', 3); autoBackup(); }
     addXP(L.xp + (first ? 200 : 20));
     Sound.play('level'); confetti(120);
     const nextW = w.subject.worlds[wi + 1];
     html = `<div class="result win"><div class="boss-defeat">${w.boss.emoji}</div><h2>Победа!</h2><p>${w.boss.name} повержен!</p>
       <div class="res-coins">+${got} <i class="ci"></i> <span>+${L.xp + (first ? 200 : 20)} опыта</span></div>
       ${first && nextW ? `<div class="unlock-card" style="--c1:${nextW.c1};--c2:${nextW.c2}">${nextW.emoji} Открыт новый мир: <b>${nextW.name}</b></div>` : ''}
-      ${first && !nextW ? `<div class="unlock-card">👑 ${w.subject.id === 'math' ? 'Числоград спасён' : 'Букваландия спасена'}! Ты — настоящий герой!</div>` : ''}
+      ${first && !nextW ? `<div class="unlock-card">👑 ${w.subject.id === 'math' ? 'Числоград спасён' : 'Букваландия спасена'}! Это настоящий подвиг!</div>` : ''}
       <div class="res-pet">${petSVG({ mood: 'wow', uid: 'rp' })}</div>
       <button class="btn primary big" data-act="resClose">На карту</button></div>`;
   } else {
@@ -1056,6 +1088,20 @@ function finishBoss(win) {
 function afterFinish(stageBefore) {
   const after = petStage();
   S.pet.maxStage = Math.max(S.pet.maxStage || 0, after);
+  /* Мелкие шаги взросления: новая черта каждые ~10–15 звёзд */
+  const mc = PET_MICRO.filter(m => totalStars() >= m.at).length;
+  if (mc > (S.pet.microSeen || 0)) {
+    const fresh = PET_MICRO.slice(S.pet.microSeen || 0, mc);
+    S.pet.microSeen = mc;
+    if (after === stageBefore && after > 0) celebrate(() => {
+      Sound.play('star');
+      modal({ cls: 'celebrate', html: `<div class="evo">${petSVG({ mood: 'love', uid: 'mc' })}</div><h2>Питомец немного подрос!</h2><p>Появилось: <b>${fresh.map(m => m.name).join(', ')}</b></p>`, buttons: [{ label: 'Здорово!', cls: 'primary' }] });
+      Speech.sayPet(U.rnd(['Смотри, я расту!', 'Ура, я взрослею!', 'Видишь, что у меня появилось?']), after);
+    });
+    if (after > 0) autoBackup();
+  }
+  if (after > stageBefore) autoBackup();
+  if (Date.now() - (S.lastBackup || 0) > 7 * 86400000) autoBackup();
   if (after > stageBefore) {
     celebrate(() => {
       Sound.play('level'); confetti();
@@ -1113,45 +1159,31 @@ function renderPet() {
   const stg = petStage(), t = totalStars();
   const nextSt = PET_STAGES[stg + 1];
   const prog = nextSt ? Math.max(0, Math.min(1, (t - PET_STAGES[stg].at) / (nextSt.at - PET_STAGES[stg].at))) : 1;
-  const decor = [...SHOP, ...EXCLUSIVE].filter(i => i.cat === 'decor' && S.owned[i.id] && !S.hidden[i.id]);
   const sat = Math.round(S.pet.satiety);
   const name = U.esc(S.pet.name || (stg === 0 ? 'Яйцо' : PET_SPECIES[S.pet.species].name));
+  const nextMicro = PET_MICRO.find(m => t < m.at);
+  const rd = riddlesLeft();
+  const cos = activeCostume();
   return `<div class="pet-screen">
-    <div class="room">
-      <div class="wall"></div><div class="floor"></div>
-      ${decor.map(i => `<span class="deco" style="left:${i.x}%;top:${i.y}%;font-size:${i.s}px">${i.icon}</span>`).join('')}
-      <button class="pet-big" data-act="petTap" aria-label="Погладить">${petSVG({ uid: 'pb' })}</button>
-      <div class="pet-say" id="petSay"></div>
-    </div>
+    ${Room.html()}
+    ${(S.counters.play || 0) < 15 && stg > 0 ? `<p class="room-hint">👆 Нажми на питомца или на подарок. Подарки можно двигать пальцем${S.owned.ball ? ', а мяч — бросить' : ''}!</p>` : ''}
     <div class="card pet-card">
       <div class="pc-head"><h2>${name}</h2><span class="stage-tag">${PET_STAGES[stg].name}</span></div>
-      <div class="bar-l"><span>⭐ Рост</span><small>${nextSt ? `${t} / ${nextSt.at} звёзд до стадии «${nextSt.name}»` : 'Максимальная стадия!'}</small></div>
+      ${cos ? `<p class="costume-tag">${cos.icon} Костюм: <b>${cos.name}</b></p>` : ''}
+      <div class="bar-l"><span>⭐ Взросление</span><small>${nextSt ? `${t} / ${nextSt.at} звёзд до стадии «${nextSt.name}»` : 'Максимальная стадия!'}</small></div>
       <div class="bar"><div style="width:${prog * 100}%"></div></div>
+      ${stg > 0 && nextMicro ? `<p class="small micro-next">🌱 Скоро появится: <b>${nextMicro.name}</b> — ещё ${nextMicro.at - t} ⭐</p>` : ''}
       ${stg > 0 ? `<div class="bar-l"><span>🍎 Сытость</span><small>${sat}%${sat >= 50 ? ' · даёт +10% монет' : ''}</small></div>
       <div class="bar sat ${sat < 30 ? 'low' : ''}"><div style="width:${sat}%"></div></div>` : '<p class="small">Получи первую звезду в любом уроке — и питомец вылупится!</p>'}
       <div class="pc-btns">
         <button class="btn primary" data-act="feed" ${stg === 0 ? 'disabled' : ''}>🍎 Покормить</button>
         <button class="btn" data-act="wardrobe" ${stg === 0 ? 'disabled' : ''}>👗 Гардероб</button>
       </div>
+      <div class="pc-btns">
+        <button class="btn" data-act="riddle" ${stg === 0 || !rd ? 'disabled' : ''}>❓ Загадка${rd ? ` <small class="cnt">${rd}</small>` : ' · завтра'}</button>
+        <button class="btn" data-act="hideSeek" ${stg === 0 ? 'disabled' : ''}>🙈 Прятки</button>
+      </div>
     </div></div>`;
-}
-function petTap() {
-  Sound.play('pet');
-  const b = $('.pet-big'); b.classList.remove('jump'); void b.offsetWidth; b.classList.add('jump');
-  const heart = document.createElement('span');
-  heart.className = 'heart-fly'; heart.textContent = U.rnd(['❤️', '💖', '💕', '✨']);
-  heart.style.left = 40 + Math.random() * 20 + '%';
-  $('.room').appendChild(heart);
-  setTimeout(() => heart.remove(), 1200);
-  const say = $('#petSay');
-  const st = petStage();
-  const phrases = st === 0 ? ['Тук-тук! 🥚', '*шевелится*', 'Скоро вылуплюсь!']
-    : S.pet.satiety < 30 ? ['Я голодный… 🥺', 'Хочу кушать!', 'Покорми меня, пожалуйста!']
-      : ['Мур! Мне нравится!', 'Ты мой лучший друг!', 'Пойдём учиться?', 'Хи-хи, щекотно!', 'Я горжусь тобой!', 'Давай заработаем звёзды!'];
-  say.textContent = U.rnd(phrases);
-  say.className = 'pet-say show';
-  clearTimeout(say._t);
-  say._t = setTimeout(() => { say.className = 'pet-say'; }, 2000);
 }
 function openFeed() {
   const foods = SHOP.filter(i => i.cat === 'food' && S.food[i.id] > 0);
@@ -1159,27 +1191,47 @@ function openFeed() {
     cls: 'sheet',
     html: `<h2>Покормить питомца</h2><p class="small">Сытость: ${Math.round(S.pet.satiety)}%</p>
       ${foods.length ? `<div class="feed-grid">${foods.map(f => `<button class="feed-it" data-food="${f.id}"><span>${f.icon}</span><b>${f.name}</b><small>×${S.food[f.id]} · +${f.sat}%</small></button>`).join('')}</div>`
-    : '<p>Еды пока нет. Её можно купить в магазине за монетки!</p>'}`,
-    buttons: foods.length ? [{ label: 'Готово', cls: 'primary' }] : [{ label: 'Закрыть', cls: 'ghost' }, { label: 'В магазин', cls: 'primary', onClick: () => { SHOP_TAB = 'food'; TAB = 'shop'; render(); } }],
+    : '<p>Еды пока нет. Её можно купить в магазине за монетки или поймать в игре «Поймай еду»!</p>'}`,
+    buttons: foods.length ? [{ label: 'Закрыть', cls: 'ghost' }] : [{ label: 'Закрыть', cls: 'ghost' }, { label: 'В магазин', cls: 'primary', onClick: () => { SHOP_TAB = 'food'; TAB = 'shop'; render(); } }],
   });
   m.addEventListener('click', ev => {
     const b = ev.target.closest('[data-food]');
     if (!b) return;
     const f = ITEMS[b.dataset.food];
     if (!S.food[f.id]) return;
-    if (S.pet.satiety >= 100) { toast('🐾 Я уже наелся!'); return; }
+    if (S.pet.satiety >= 100) { toast('🐾 Спасибо, больше не хочется!'); return; }
     S.food[f.id]--; S.pet.satiety = Math.min(100, S.pet.satiety + f.sat);
     S.counters.fed++;
-    Sound.play('pet');
-    b.querySelector('small').textContent = `×${S.food[f.id]} · +${f.sat}%`;
-    if (!S.food[f.id]) b.disabled = true;
-    m.querySelector('.small').textContent = `Сытость: ${Math.round(S.pet.satiety)}%`;
-    toast(`${f.icon} Ням-ням! Спасибо!`);
-    checkAch(); save(); render();
+    checkAch(); save();
+    m.close();
+    render();
+    setTimeout(() => Room.eat(f), 250);
   });
 }
+
+/* ---------- Гардероб и костюмы ---------- */
+const activeCostume = () => COSTUMES.find(c => c.items.every(id => ITEMS[id] && S.pet[ITEMS[id].cat] === id)) || null;
+function wear(id) {
+  const i = ITEMS[id];
+  if (!i) return;
+  if (i.cat === 'color') S.pet.color = id; else S.pet[i.cat] = id;
+}
+/* Сложился полный костюм — питомец радуется (один раз на каждое новое надевание) */
+function checkCostume() {
+  const c = activeCostume();
+  const was = S.pet.costume || null;
+  S.pet.costume = c ? c.id : null;
+  if (!c || c.id === was) return;
+  const first = !S.costumes[c.id];
+  if (first) S.costumes[c.id] = Date.now();
+  Speech.sayPet(c.say, petStage());
+  Sound.play('star');
+  toast(`${c.icon} Костюм «${c.name}»${first ? ' — новый!' : ''}`);
+  checkAch();
+  setTimeout(flushQueue, 600);
+}
 function openWardrobe() {
-  const slots = [['hat', 'Голова'], ['glasses', 'Очки'], ['neck', 'Шея'], ['color', 'Цвет']];
+  const slots = [...WEAR_CATS, ['color', 'Цвет']];
   const build = () => slots.map(([cat, nm]) => {
     const items = SHOP.filter(i => i.cat === cat && S.owned[i.id]);
     const cur = cat === 'color' ? S.pet.color : S.pet[cat];
@@ -1187,20 +1239,31 @@ function openWardrobe() {
       <button class="wd-it ${!cur ? 'on' : ''}" data-wd="${cat}:">${cat === 'color' ? '🎨' : '✖️'}<small>${cat === 'color' ? 'Обычный' : 'Снять'}</small></button>
       ${items.map(i => `<button class="wd-it ${cur === i.id ? 'on' : ''}" data-wd="${cat}:${i.id}">${i.icon}<small>${i.name}</small></button>`).join('')}
       ${items.length ? '' : '<span class="small muted">Купи в магазине</span>'}</div></div>`;
-  }).join('') + (() => {
+  }).join('') + `<div class="wd-sec"><b>Костюмы</b> <small class="muted">надень все вещи набора</small><div class="wd-row">${COSTUMES.map(c => {
+    const have = c.items.filter(id => S.owned[id]).length;
+    return `<button class="wd-it cos ${have === c.items.length ? 'full' : ''} ${S.pet.costume === c.id ? 'on' : ''}" data-cos="${c.id}">${c.icon}<small>${c.name}<br>${have} из ${c.items.length}</small></button>`;
+  }).join('')}</div></div>` + (() => {
     const dec = [...SHOP, ...EXCLUSIVE].filter(i => i.cat === 'decor' && S.owned[i.id]);
-    return dec.length ? `<div class="wd-sec"><b>Домик (показать / спрятать)</b><div class="wd-row">${dec.map(i => `<button class="wd-it ${S.hidden[i.id] ? '' : 'on'}" data-dec="${i.id}">${i.icon}<small>${i.name}</small></button>`).join('')}</div></div>` : '';
+    return dec.length ? `<div class="wd-sec"><b>Домик (показать / спрятать)</b><div class="wd-row">${dec.map(i => `<button class="wd-it ${S.hidden[i.id] ? '' : 'on'}" data-dec="${i.id}">${i.icon}<small>${i.name}</small></button>`).join('')}</div>
+      <button class="link" data-roomreset="1">Расставить подарки как было</button></div>` : '';
   })();
   const m = modal({ cls: 'sheet', html: `<h2>Гардероб</h2><div class="wd-pet">${petSVG({ uid: 'wd' })}</div><div id="wdBody">${build()}</div>`, buttons: [{ label: 'Готово', cls: 'primary' }] });
   m.addEventListener('click', ev => {
-    const b = ev.target.closest('[data-wd],[data-dec]');
+    if (ev.target.closest('[data-roomreset]')) { S.room.pos = {}; save(); render(); toast('🏠 Подарки на своих местах'); return; }
+    const b = ev.target.closest('[data-wd],[data-dec],[data-cos]');
     if (!b) return;
     Sound.play('tap');
     if (b.dataset.dec) { const id = b.dataset.dec; S.hidden[id] = !S.hidden[id]; }
-    else {
+    else if (b.dataset.cos) {
+      const c = COSTUMES.find(x => x.id === b.dataset.cos);
+      const miss = c.items.filter(id => !S.owned[id]);
+      if (miss.length) { toast(`Не хватает: ${miss.map(id => ITEMS[id].icon + ' ' + ITEMS[id].name).join(', ')}`); return; }
+      c.items.forEach(wear);
+    } else {
       const [cat, id] = b.dataset.wd.split(':');
       if (cat === 'color') S.pet.color = id || null; else S.pet[cat] = id || null;
     }
+    checkCostume();
     save();
     m.querySelector('.wd-pet').innerHTML = petSVG({ uid: 'wd' });
     m.querySelector('#wdBody').innerHTML = build();
@@ -1211,88 +1274,240 @@ function openWardrobe() {
 /* ============================================================
    МАГАЗИН
    ============================================================ */
+const isWear = i => WEAR_CATS.some(c => c[0] === i.cat);
+function shopCard(i, L2) {
+  const locked = i.lvl > L2;
+  const owned = i.cat !== 'food' && S.owned[i.id];
+  const equipped = (i.cat === 'theme' && S.theme === i.theme) || (i.cat === 'color' && S.pet.color === i.id) || (isWear(i) && S.pet[i.cat] === i.id);
+  let btn;
+  if (locked) btn = `<span class="lock-lv">🔒 Уровень ${i.lvl}</span>`;
+  else if (equipped) btn = `<span class="eq">✓ Надето</span>`;
+  else if (owned) btn = i.cat === 'decor' ? `<span class="eq">✓ В домике</span>` : `<button class="btn sm" data-act="equip" data-arg="${i.id}">${i.cat === 'theme' ? 'Включить' : 'Надеть'}</button>`;
+  else btn = `<button class="btn sm ${S.coins >= i.price ? 'primary' : 'ghost'}" data-act="buy" data-arg="${i.id}">${fmt(i.price)} <i class="ci"></i></button>`;
+  const sw = i.cat === 'color' ? `<span class="swatch" style="background:${i.color === 'rainbow' ? 'linear-gradient(135deg,#FF6B9A,#FFD34E,#5ED6A0,#6EC6FF,#B39DFF)' : i.color === 'gold' ? 'linear-gradient(135deg,#FFF3B0,#F5C542,#C98B12)' : i.color}"></span>` : '';
+  /* Одежда, нарисованная по фигуре, показывается сразу на питомце */
+  const prev = i.shape ? `<span class="it-pet">${petSVG({ uid: 'sh' + i.id, stage: Math.max(2, petStage()), [i.cat]: i, mood: 'happy', setIcon: null })}</span>` : '';
+  return `<div class="item ${locked ? 'locked' : ''}">${prev || `<span class="it-ic">${sw || i.icon}</span>`}<b>${i.name}</b>${i.cat === 'food' ? `<small>+${i.sat}% сытости · есть: ${S.food[i.id] || 0}</small>` : ''}${i.cat === 'decor' && i.ps > 1 ? `<small>играет, когда станет ${['', '', 'подростком', 'юным героем', 'легендой'][i.ps]}</small>` : ''}${btn}</div>`;
+}
 function renderShop() {
   const L2 = lvl();
   const tabs = `<div class="tabs">${SHOP_TABS.map(t => `<button class="tab ${SHOP_TAB === t.id ? 'on' : ''}" data-act="shopTab" data-arg="${t.id}">${t.icon}<span>${t.name}</span></button>`).join('')}</div>`;
   let body = '';
   if (SHOP_TAB === 'games') {
-    const price = gamePrice(day().games);
-    body = `<p class="shop-note">Мини-игры — награда за учёбу. Каждая следующая игра сегодня дороже.</p><div class="games">${GAMES.map(g => `
+    const plays = day().games, price = gamePrice(plays), free = Math.max(0, FREE_GAMES - plays);
+    body = `<p class="shop-note">${free ? `🎁 Сегодня бесплатно ещё <b>${free}</b> ${U.plural(free, 'игра', 'игры', 'игр')}!` : 'Бесплатные игры на сегодня закончились. Каждая следующая игра дороже.'}</p><div class="games">${GAMES.map(g => `
       <div class="card game-card"><span class="g-ic">${g.icon}</span><div><h3>${g.name}</h3><p class="small">${g.desc}</p>
-      <p class="small">Рекорд: <b>${S.records[g.id] || '—'}</b></p></div>
-      <button class="btn primary" data-act="buyGame" data-arg="${g.id}">Играть · ${price} <i class="ci"></i></button></div>`).join('')}</div>`;
+      <p class="small">Рекорд: <b>${S.records[g.id] || '—'}</b>${S.gameProg[g.id] ? ` · уровень <b>${S.gameProg[g.id]}</b>` : ''}</p></div>
+      <button class="btn primary" data-act="buyGame" data-arg="${g.id}">${price ? `Играть · ${price} <i class="ci"></i>` : 'Играть бесплатно'}</button></div>`).join('')}</div>`;
   } else if (SHOP_TAB === 'prizes') {
-    const reqs = S.parent.requests.slice().reverse().slice(0, 8);
-    body = `<p class="shop-note">Настоящие призы от взрослых! Копи монетки и обменивай. Взрослый подтвердит и вручит приз.</p>
-      <div class="prizes">${S.parent.prizes.length ? S.parent.prizes.map(p => `<div class="card prize"><span class="p-ic">🎁</span><div class="p-mid"><b>${U.esc(p.name)}</b>
-        <div class="bar"><div style="width:${Math.min(100, 100 * S.coins / p.price)}%"></div></div><small>${S.coins >= p.price ? 'Хватает! 🎉' : 'Осталось накопить: ' + fmt(p.price - S.coins)}</small></div>
-        <button class="btn ${S.coins >= p.price ? 'primary' : 'ghost'}" data-act="buyPrize" data-arg="${p.id}">${fmt(p.price)} <i class="ci"></i></button></div>`).join('') : '<p class="small">Взрослые ещё не добавили призы.</p>'}</div>
-      ${reqs.length ? `<h3 class="sub">Мои заказы</h3>${reqs.map(r => `<div class="req ${r.status}"><span>${U.esc(r.name)}</span><small>${r.status === 'wait' ? '⏳ ждёт взрослого' : r.status === 'given' ? '🎉 получено' : '↩️ отменено'}</small></div>`).join('')}` : ''}`;
+    body = renderPiggy();
+  } else if (SHOP_TAB === 'wear') {
+    body = WEAR_CATS.map(([cat, nm]) => `<h3 class="sub">${nm}</h3><div class="shop-grid">${SHOP.filter(i => i.cat === cat).map(i => shopCard(i, L2)).join('')}</div>`).join('')
+      + `<h3 class="sub">🎭 Костюмы</h3><p class="shop-note">Собери все вещи набора и надень их в «Гардеробе» — питомец обрадуется!</p><div class="costumes">${COSTUMES.map(c => `<div class="card cos-card ${S.costumes[c.id] ? 'got' : ''}"><span>${c.icon}</span><b>${c.name}</b><small>${c.items.map(id => `<i class="${S.owned[id] ? 'have' : ''}">${ITEMS[id].icon}</i>`).join('')}</small></div>`).join('')}</div>`;
   } else {
     const tab = SHOP_TABS.find(t => t.id === SHOP_TAB);
     const cats = tab.cats || [SHOP_TAB];
-    const items = SHOP.filter(i => cats.includes(i.cat));
-    body = `<div class="shop-grid">${items.map(i => {
-      const locked = i.lvl > L2;
-      const owned = i.cat !== 'food' && S.owned[i.id];
-      const equipped = (i.cat === 'theme' && S.theme === i.theme) || (i.cat === 'color' && S.pet.color === i.id) || (['hat', 'glasses', 'neck'].includes(i.cat) && S.pet[i.cat] === i.id);
-      let btn;
-      if (locked) btn = `<span class="lock-lv">🔒 Уровень ${i.lvl}</span>`;
-      else if (equipped) btn = `<span class="eq">✓ Надето</span>`;
-      else if (owned) btn = i.cat === 'decor' ? `<span class="eq">✓ В домике</span>` : `<button class="btn sm" data-act="equip" data-arg="${i.id}">${i.cat === 'theme' ? 'Включить' : 'Надеть'}</button>`;
-      else btn = `<button class="btn sm ${S.coins >= i.price ? 'primary' : 'ghost'}" data-act="buy" data-arg="${i.id}">${fmt(i.price)} <i class="ci"></i></button>`;
-      const sw = i.cat === 'color' ? `<span class="swatch" style="background:${i.color === 'rainbow' ? 'linear-gradient(135deg,#FF6B9A,#FFD34E,#5ED6A0,#6EC6FF,#B39DFF)' : i.color === 'gold' ? 'linear-gradient(135deg,#FFF3B0,#F5C542,#C98B12)' : i.color}"></span>` : '';
-      return `<div class="item ${locked ? 'locked' : ''}"><span class="it-ic">${sw || i.icon}</span><b>${i.name}</b>${i.cat === 'food' ? `<small>+${i.sat}% сытости · есть: ${S.food[i.id] || 0}</small>` : ''}${btn}</div>`;
-    }).join('')}</div>`;
+    body = `<div class="shop-grid">${SHOP.filter(i => cats.includes(i.cat)).map(i => shopCard(i, L2)).join('')}</div>`;
   }
   return `<div class="shop"><div class="shop-head"><h2>Магазин</h2><span class="wallet"><i class="ci"></i> ${fmt(S.coins)}</span></div>${tabs}${body}</div>`;
 }
 function buy(id) {
   const i = ITEMS[id];
   if (!i || i.lvl > lvl()) return;
-  if (S.coins < i.price) { Sound.play('wrong'); toast(`Не хватает ${fmt(i.price - S.coins)} <i class="ci"></i>. Пройди ещё урок!`); return; }
+  if (S.coins < i.price) { Sound.play('wrong'); toast(`Не хватает ${fmt(i.price - S.coins)} <i class="ci"></i>. Пройди ещё урок или копи в 🐷 копилке!`); return; }
   confirmBox(`<div class="m-icon">${i.icon}</div><h2>${i.name}</h2><p>Купить за <b>${fmt(i.price)} <i class="ci"></i></b>?</p>`, 'Купить', () => {
     S.coins -= i.price;
-    S.counters.bought++;
-    if (i.cat === 'food') S.food[i.id] = (S.food[i.id] || 0) + 1;
-    else {
-      S.owned[i.id] = true;
-      if (i.cat === 'theme') S.theme = i.theme;
-      if (i.cat === 'color') S.pet.color = i.id;
-      if (['hat', 'glasses', 'neck'].includes(i.cat)) S.pet[i.cat] = i.id;
-    }
+    grant(i);
     Sound.play('buy');
-    toast(`${i.icon} Куплено: ${i.name}!`);
     checkAch(); save(); render(); bump('#chip-coins');
+    setTimeout(() => thank(i), 250);
+  });
+}
+/* Выдать купленное (из кошелька или из копилки) */
+function grant(i) {
+  S.counters.bought++;
+  if (i.cat === 'food') { S.food[i.id] = (S.food[i.id] || 0) + 1; return; }
+  S.owned[i.id] = true;
+  if (i.cat === 'theme') S.theme = i.theme;
+  if (i.cat === 'color') S.pet.color = i.id;
+  if (isWear(i)) { S.pet[i.cat] = i.id; checkCostume(); }
+}
+/* Питомец благодарит за подарок — голосом и в окошке */
+function thank(i) {
+  const stg = petStage();
+  const ph = U.rnd(THANKS[i.id] || THANKS_ANY);
+  if (stg > 0) Speech.sayPet(ph, stg);
+  if (i.cat === 'food') { toast(`${i.icon} ${stg ? ph : 'Куплено: ' + i.name}`); return; }
+  const wearIt = isWear(i) || i.cat === 'color';
+  modal({
+    cls: 'celebrate thank',
+    html: `<div class="thank-pet">${petSVG({ uid: 'th', mood: stg ? 'love' : 'happy' })}${wearIt ? '' : `<span class="thank-item">${i.icon}</span>`}</div>
+      <h2>${stg ? `«${ph}»` : 'Яйцо радостно покачивается!'}</h2><p class="small">${i.name} — ${i.cat === 'decor' ? 'уже в домике' : wearIt ? 'уже надето' : 'уже включено'}</p>`,
+    buttons: i.cat === 'decor'
+      ? [{ label: 'Пожалуйста!', cls: 'ghost' }, { label: '🏠 Посмотреть', cls: 'primary', onClick: () => { TAB = 'pet'; render(); setTimeout(() => Room.playWith(i.id, true), 700); } }]
+      : [{ label: 'Пожалуйста! 💖', cls: 'primary' }],
   });
 }
 function equip(id) {
   const i = ITEMS[id];
   if (!S.owned[id]) return;
   if (i.cat === 'theme') S.theme = i.theme;
-  else if (i.cat === 'color') S.pet.color = id;
-  else S.pet[i.cat] = id;
+  else wear(id);
+  checkCostume();
   Sound.play('tap'); save(); render();
 }
-function buyPrize(id) {
-  const p = S.parent.prizes.find(x => x.id === id);
-  if (!p) return;
-  if (S.coins < p.price) { Sound.play('wrong'); toast(`Нужно ещё ${fmt(p.price - S.coins)} <i class="ci"></i>. Ты справишься!`); return; }
-  confirmBox(`<div class="m-icon">🎁</div><h2>${U.esc(p.name)}</h2><p>Обменять <b>${fmt(p.price)} <i class="ci"></i></b> на этот приз? Взрослый получит твою заявку.</p>`, 'Обменять', () => {
-    S.coins -= p.price;
-    S.parent.requests.push({ id: 'r' + Date.now(), prize: p.id, name: p.name, price: p.price, t: Date.now(), status: 'wait' });
+
+/* ---------- Копилка: копим на одну цель ---------- */
+function piggyGoal() {
+  const g = S.piggy.goal;
+  if (!g) return null;
+  if (g.t === 'prize') { const p = S.parent.prizes.find(x => x.id === g.id); return p ? { t: 'prize', id: p.id, name: p.name, price: p.price, icon: '🎁' } : null; }
+  const i = ITEMS[g.id];
+  return i && !S.owned[i.id] ? { t: 'item', id: i.id, name: i.name, price: i.price, icon: i.icon } : null;
+}
+function renderPiggy() {
+  const g = piggyGoal(), sv = S.piggy.saved, share = S.settings.piggyShare;
+  const full = g && sv >= g.price;
+  const L2 = lvl();
+  const reqs = S.parent.requests.slice().reverse().slice(0, 8);
+  const shopGoals = SHOP.filter(i => ['decor', 'color', 'theme', ...WEAR_CATS.map(c => c[0])].includes(i.cat) && !S.owned[i.id] && i.lvl <= L2 && i.price >= 300).sort((a, b) => a.price - b.price);
+  const isGoal = (t, id) => S.piggy.goal && S.piggy.goal.t === t && S.piggy.goal.id === id;
+  return `<div class="card piggy ${full ? 'full' : ''}">
+      <div class="pg-top"><span class="pg-ic">🐷</span><div><b>Моя копилка: ${fmt(sv)} <i class="ci"></i></b>
+      <small>${g ? `Коплю на: ${g.icon} <b>${U.esc(g.name)}</b>` : 'Выбери ниже, на что копить!'}</small></div></div>
+      ${g ? `<div class="bar pg-bar"><div style="width:${Math.min(100, 100 * sv / g.price)}%"></div></div><small>${full ? '🎉 Накоплено! Можно получать!' : `${fmt(sv)} из ${fmt(g.price)} · осталось ${fmt(g.price - sv)}`}</small>` : ''}
+      <p class="small">${g ? `В копилку сама падает ${share === 100 ? 'каждая заработанная монетка' : `${share}% заработанных монеток`}, остальное — в кошелёк на еду и игры.` : 'Пока цели нет, все монетки идут в кошелёк.'}</p>
+      <div class="pg-btns">${full ? '<button class="btn primary big" data-act="piggyClaim">🎁 Получить!</button>'
+    : g && S.coins > 0 ? '<button class="btn" data-act="piggyPut">➕ Положить из кошелька</button>' : ''}</div></div>
+    <h3 class="sub">🎁 Призы от взрослых</h3>
+    <div class="prizes">${S.parent.prizes.length ? S.parent.prizes.map(p => `<div class="card prize ${isGoal('prize', p.id) ? 'goal' : ''}"><span class="p-ic">🎁</span><div class="p-mid"><b>${U.esc(p.name)}</b><small>${fmt(p.price)} <i class="ci"></i></small></div>
+      ${isGoal('prize', p.id) ? '<span class="eq">⭐ Цель</span>' : `<button class="btn sm" data-act="piggySet" data-arg="prize:${p.id}">🐷 Копить</button>`}</div>`).join('') : '<p class="small">Взрослые ещё не добавили призы.</p>'}</div>
+    ${shopGoals.length ? `<h3 class="sub">🛍️ Или дорогой подарок из магазина</h3><div class="prizes">${shopGoals.map(i => `<div class="card prize ${isGoal('item', i.id) ? 'goal' : ''}"><span class="p-ic">${i.icon}</span><div class="p-mid"><b>${i.name}</b><small>${fmt(i.price)} <i class="ci"></i></small></div>
+      ${isGoal('item', i.id) ? '<span class="eq">⭐ Цель</span>' : `<button class="btn sm" data-act="piggySet" data-arg="item:${i.id}">🐷 Копить</button>`}</div>`).join('')}</div>` : ''}
+    ${reqs.length ? `<h3 class="sub">Мои заказы</h3>${reqs.map(r => `<div class="req ${r.status}"><span>${U.esc(r.name)}</span><small>${r.status === 'wait' ? '⏳ ждёт взрослого' : r.status === 'given' ? '🎉 получено' : '↩️ отменено'}</small></div>`).join('')}` : ''}`;
+}
+function piggySet(arg) {
+  const [t, id] = arg.split(':');
+  const apply = () => { S.piggy.goal = { t, id }; Sound.play('coin'); save(); render(); toast('🐷 Новая цель! Монетки будут копиться на неё'); };
+  const g = piggyGoal();
+  if (g && S.piggy.saved > 0) confirmBox(`<div class="m-icon">🐷</div><h2>Сменить цель?</h2><p>В копилке <b>${fmt(S.piggy.saved)} <i class="ci"></i></b>. Они перейдут на новую цель.</p>`, 'Сменить', apply);
+  else apply();
+}
+function piggyPut() {
+  const g = piggyGoal(); if (!g) return;
+  const need = Math.max(0, g.price - S.piggy.saved), max = Math.min(S.coins, need);
+  if (!max) return;
+  const opts = [10, 50, 100, 500].filter(v => v < max);
+  const m = modal({
+    html: `<div class="m-icon">🐷</div><h2>Положить в копилку</h2><p class="small">В кошельке ${fmt(S.coins)} <i class="ci"></i> · до цели ${fmt(need)}</p>
+      <div class="pg-put">${opts.map(v => `<button class="btn" data-put="${v}">${v}</button>`).join('')}<button class="btn primary" data-put="${max}">${max === need ? 'Сколько нужно' : 'Всё'} · ${fmt(max)}</button></div>`,
+    buttons: [{ label: 'Отмена', cls: 'ghost' }],
+  });
+  m.addEventListener('click', ev => {
+    const b = ev.target.closest('[data-put]'); if (!b) return;
+    const v = Math.min(+b.dataset.put, S.coins, Math.max(0, g.price - S.piggy.saved));
+    S.coins -= v; S.piggy.saved += v;
+    Sound.play('coin'); save(); m.close(); render(); bump('#chip-pig');
+    if (S.piggy.saved >= g.price) toast('🎉 Накоплено! Можно получать подарок!');
+  });
+}
+function piggyClaim() {
+  const g = piggyGoal();
+  if (!g || S.piggy.saved < g.price) return;
+  confirmBox(`<div class="m-icon">${g.icon}</div><h2>${U.esc(g.name)}</h2><p>Потратить <b>${fmt(g.price)} <i class="ci"></i></b> из копилки?${g.t === 'prize' ? ' Взрослый получит твою заявку.' : ''}</p>`, 'Да!', () => {
+    S.piggy.saved -= g.price; S.piggy.goal = null;
+    S.counters.piggy = (S.counters.piggy || 0) + 1;
     Sound.play('buy'); confetti();
-    toast('🎁 Заявка отправлена взрослому!');
-    save(); render();
+    if (g.t === 'prize') {
+      S.parent.requests.push({ id: 'r' + Date.now(), prize: g.id, name: g.name, price: g.price, t: Date.now(), status: 'wait' });
+      toast('🎁 Заявка отправлена взрослому!');
+      if (petStage() > 0) Speech.sayPet('Ура! Мы накопили! Какие мы молодцы!', petStage());
+    } else {
+      const i = ITEMS[g.id];
+      grant(i);
+      setTimeout(() => thank(i), 300);
+    }
+    if (S.piggy.saved > 0) { S.coins += S.piggy.saved; S.piggy.saved = 0; }
+    checkAch(); save(); render();
   });
 }
 function buyGame(gid) {
   const price = gamePrice(day().games);
+  const g = GAMES.find(x => x.id === gid);
+  const start = () => { S.coins -= price; day().games++; save(); render(); GAME_FN[gid](); };
   if (S.coins < price) { Sound.play('wrong'); toast(`Нужно ${price} <i class="ci"></i> для игры`); return; }
-  confirmBox(`<div class="m-icon">${GAMES.find(g => g.id === gid).icon}</div><h2>Сыграть?</h2><p>Игра стоит <b>${price} <i class="ci"></i></b>.</p>`, 'Играть!', () => {
-    S.coins -= price; day().games++;
-    save(); render();
-    if (gid === 'balloons') gameBalloons(); else gameMemory();
+  if (!price) { Sound.play('tap'); start(); return; }
+  confirmBox(`<div class="m-icon">${g.icon}</div><h2>Сыграть?</h2><p>Бесплатные игры на сегодня закончились. Эта игра стоит <b>${price} <i class="ci"></i></b>.</p>`, 'Играть!', start);
+}
+
+/* ---------- Загадка от питомца: 3 в день, по пройденному ---------- */
+const RIDDLES_DAY = 3;
+const riddlesLeft = () => S.riddle.day !== U.dayKey() ? RIDDLES_DAY : Math.max(0, RIDDLES_DAY - S.riddle.n);
+function makeRiddle() {
+  const kinds = ['ru', 'math'];
+  if (Object.keys(S.stars).some(k => LESSONS[k] && LESSONS[k].subject.id === 'en')) kinds.push('en', 'en');
+  const k = U.rnd(kinds);
+  const near = (ans, n = 3, lo = 0) => { const s = new Set([ans]); let d = 1; while (s.size < n + 1) { const v = ans + U.rnd([-d, d, d * 10, -d * 10]); if (v >= lo && v !== ans) s.add(v); d = d % 4 + 1; } return U.shuffle([...s]); };
+  if (k === 'math') {
+    if (Math.random() < 0.5) {
+      const a = 2 + Math.floor(Math.random() * Math.max(1, S.mul.unlocked - 1)), b = 2 + Math.floor(Math.random() * 8);
+      return { q: `Сколько будет <b>${a} × ${b}</b>?`, opts: near(a * b, 3, 1).map(String), ans: String(a * b), full: `${a} × ${b} = ${a * b}` };
+    }
+    const a = 10 + Math.floor(Math.random() * 80), b = 2 + Math.floor(Math.random() * Math.min(40, 99 - a));
+    const plus = Math.random() < 0.5 || a < b;
+    const r = plus ? a + b : a - b;
+    return { q: `Сколько будет <b>${a} ${plus ? '+' : '−'} ${b}</b>?`, opts: near(r).map(String), ans: String(r), full: `${a} ${plus ? '+' : '−'} ${b} = ${r}` };
+  }
+  if (k === 'en') {
+    const all = Object.values(V).flat().filter(w => /^\p{Extended_Pictographic}/u.test(w[2] || ''));
+    const w = U.rnd(all);
+    const opts = U.shuffle([w[0], ...U.sample(all.filter(x => x[0] !== w[0]), 3).map(x => x[0])]);
+    return { q: `<span class="rd-big">${w[2]}</span>Как это по-английски?`, opts, ans: w[0], full: `${w[2]} — ${w[0]} (${w[1]})`, en: w[0] };
+  }
+  const w = U.rnd(DICT_WORDS), idx = [...w].findIndex(ch => ch !== ch.toLowerCase());
+  const letter = w[idx].toLowerCase(), alt = DICT_ALT[letter] || 'а';
+  const word = w.toLowerCase();
+  return { q: `Какая буква пропущена в словарном слове?<span class="rd-word">${word.slice(0, idx)}<u>_</u>${word.slice(idx + 1)}</span>`, opts: U.shuffle([letter, alt]), ans: letter, full: word };
+}
+function openRiddle() {
+  if (!riddlesLeft() || petStage() === 0) return;
+  const r = makeRiddle();
+  const nm = U.esc(S.pet.name || PET_SPECIES[S.pet.species].name);
+  let done = false;
+  const m = modal({
+    cls: 'riddle',
+    html: `<div class="rd-pet">${petSVG({ uid: 'rd', mood: 'wow' })}</div><p class="small">Загадка от ${nm}:</p><h2 class="rd-q">${r.q}</h2>
+      <div class="rd-opts">${r.opts.map(o => `<button class="btn big" data-rd="${U.esc(o)}">${U.esc(o)}</button>`).join('')}</div><p class="rd-res"></p>`,
+    buttons: [{ label: 'Потом', cls: 'ghost' }],
+  });
+  Speech.sayPet(r.en ? 'Как это по-английски?' : r.q.replace(/<[^>]+>/g, ' ').replace('×', 'умножить на').replace('−', 'минус').replace(/_/g, ''), petStage());
+  m.addEventListener('click', ev => {
+    const b = ev.target.closest('[data-rd]');
+    if (!b || done) return;
+    done = true;
+    if (S.riddle.day !== U.dayKey()) S.riddle = { day: U.dayKey(), n: 0 };
+    S.riddle.n++;
+    const ok = b.dataset.rd === r.ans;
+    $$('[data-rd]', m).forEach(x => { x.disabled = true; if (x.dataset.rd === r.ans) x.classList.add('right'); });
+    let msg;
+    if (ok) {
+      b.classList.add('right');
+      const got = earnCoins(15);
+      S.counters.riddles = (S.counters.riddles || 0) + 1;
+      Sound.play('right');
+      msg = U.rnd(['Правильно! Умница!', 'Верно! Вот это знания!', 'Точно! Здорово!']);
+      m.querySelector('.rd-res').innerHTML = `✅ ${msg} <b>+${got} <i class="ci"></i></b>`;
+      m.querySelector('.rd-pet').innerHTML = petSVG({ uid: 'rd', mood: 'love' });
+    } else {
+      b.classList.add('wrong');
+      Sound.play('wrong');
+      msg = `Не совсем… Правильно: ${r.full}`;
+      m.querySelector('.rd-res').innerHTML = `💡 Правильно: <b>${U.esc(r.full)}</b>`;
+    }
+    Speech.sayPet(msg.replace(/\(.*\)/, ''), petStage());
+    if (r.en && Speech.enOk()) setTimeout(() => Speech.sayEn(r.en), 1800);
+    m.querySelector('.modal-btns .btn').textContent = 'Хорошо';
+    checkAch(); save(); render();
   });
 }
 
@@ -1379,7 +1594,7 @@ function gameBalloons() {
       const rec = score > (S.records.balloons || 0);
       if (rec) S.records.balloons = score;
       addXP(Math.min(30, score));
-      gameEnd(ov, `<div class="m-icon">🎈</div><h2>Ты лопнул ${score} ${U.plural(score, 'шарик', 'шарика', 'шариков')}!</h2>${rec ? '<p class="reward">🏆 Новый рекорд!</p>' : `<p>Рекорд: ${S.records.balloons}</p>`}<p class="small">+${Math.min(30, score)} опыта</p>`);
+      gameEnd(ov, `<div class="m-icon">🎈</div><h2>Лопнуто ${score} ${U.plural(score, 'шарик', 'шарика', 'шариков')}!</h2>${rec ? '<p class="reward">🏆 Новый рекорд!</p>' : `<p>Рекорд: ${S.records.balloons}</p>`}<p class="small">+${Math.min(30, score)} опыта</p>`);
     }
   }, 1000);
   spawn();
@@ -1432,7 +1647,7 @@ function showBreak() {
     cls: 'celebrate',
     html: `<div class="m-icon">🧘</div><h2>Время отдохнуть!</h2><p>Ты занимаешься уже ${S.settings.breakMin} минут. Сделай зарядку для глаз:</p>
       <ul class="res-lines"><li>👀 Посмотри вдаль 10 секунд</li><li>🔄 Поводи глазами по кругу</li><li>🙆 Потянись и встань со стула</li></ul>`,
-    buttons: [{ label: 'Я отдохнул!', cls: 'primary' }],
+    buttons: [{ label: 'Отдых закончен!', cls: 'primary' }],
   });
 }
 
@@ -1548,7 +1763,9 @@ function pMul() {
 }
 function pPrizes() {
   const reqs = S.parent.requests.slice().reverse();
-  return `<p class="small">Добавьте реальные награды. Ребёнок копит монеты и «покупает» приз, а вы подтверждаете выдачу. Ориентир: за хороший день занятий ребёнок получает около ${S.settings.dailyLimit || 500} монет.</p>
+  const pg = piggyGoal();
+  return `<div class="card"><b>🐷 Копилка: ${fmt(S.piggy.saved)} <i class="ci"></i></b><p class="small">${pg ? `Цель: ${pg.icon} ${U.esc(pg.name)} (${fmt(pg.price)})` : 'Цель не выбрана.'} Доля в копилку — в «Настройках».</p>${S.piggy.saved ? '<button class="btn ghost sm" data-act="piggyBack">Вернуть монеты из копилки в кошелёк</button>' : ''}</div>
+    <p class="small">Добавьте реальные награды. Ребёнок выбирает цель в магазине (🐷 Копилка), копит монеты и получает приз, а вы подтверждаете выдачу. Ориентир: за хороший день занятий ребёнок получает около ${S.settings.dailyLimit || 500} монет.</p>
     ${reqs.filter(r => r.status === 'wait').map(r => `<div class="card req-p"><div><b>🎁 ${U.esc(r.name)}</b><small>${new Date(r.t).toLocaleDateString('ru-RU')} · ${fmt(r.price)} <i class="ci"></i></small></div>
       <div class="rq-b"><button class="btn ghost sm" data-act="reqCancel" data-arg="${r.id}">Вернуть монеты</button><button class="btn primary sm" data-act="reqGive" data-arg="${r.id}">Выдано ✓</button></div></div>`).join('')}
     <h3 class="sub">Список призов</h3>
@@ -1566,6 +1783,9 @@ function pSettings() {
     <label class="fld"><b>Напоминание о перерыве</b>${sel('breakMin', [[10, 'каждые 10 минут'], [15, 'каждые 15 минут'], [20, 'каждые 20 минут'], [30, 'каждые 30 минут'], [0, 'выключено']], s.breakMin)}</label>
     ${tg('sound', s.sound, 'Звуки', '')}
     ${tg('tts', s.tts, 'Озвучка заданий (кнопка 🔊)', Speech.available() ? '' : 'На этом устройстве синтез речи недоступен')}
+    ${tg('petVoice', s.petVoice, 'Голос питомца', 'Питомец говорит: благодарит за подарки, отвечает на касания, задаёт загадки')}
+    <label class="fld"><b>Питомец засыпает</b><small>Вечером питомец спит и просит закончить игру. Уроки остаются доступны.</small>${sel('sleepFrom', [[0, 'не засыпает'], [20, 'в 20:00'], [20.5, 'в 20:30'], [21, 'в 21:00'], [21.5, 'в 21:30'], [22, 'в 22:00']], s.sleepFrom)}</label>
+    <label class="fld"><b>🐷 Копилка</b><small>Какая часть заработанных монет сама падает в копилку, когда у ребёнка есть цель.</small>${sel('piggyShare', [[25, '25%'], [50, '50% (рекомендуется)'], [75, '75%'], [100, '100% — всё в копилку']], s.piggyShare)}</label>
     ${tg('openAll', s.openAll, 'Открыть все темы', 'Можно сразу выбрать любую тему (например, для 3 класса). Боссы всё равно требуют 2 звезды в темах мира.')}
     <div class="card"><b>🔤 Английский голос</b><p class="small">${Speech.enOk() ? `Найден: ${U.esc(Speech.enVoice.name)} (${U.esc(Speech.enVoice.lang)}). Нажмите, чтобы послушать.` : 'Английский голос не найден — задания на слух заменяются чтением. На Android: Настройки → Специальные возможности → Синтез речи → «Синтезатор речи Google» → установите английский (Великобритания).'}</p>
       <button class="btn" data-act="voiceTest">🔊 Проверить голос</button></div>
@@ -1576,13 +1796,20 @@ function pBackup() {
   const last = S.lastBackup ? new Date(S.lastBackup).toLocaleString('ru-RU') : 'ещё ни разу';
   return `<div class="set">
     <div class="card"><b>Последнее сохранение:</b> ${last}<p class="small">Прогресс хранится в браузере на этом устройстве. Если очистить данные браузера или сменить устройство, прогресс пропадёт. Раз в неделю сохраняйте файл резервной копии.</p></div>
+    <label class="tg"><span><b>Автоматическая копия</b><small>После победы над боссом, роста питомца, испытаний недели (и если копии не было неделю) файл сам сохраняется в «Загрузки». Не чаще раза в день.</small></span><input type="checkbox" data-set="autoBackup" ${S.settings.autoBackup ? 'checked' : ''}><i></i></label>
     <button class="btn primary big" data-act="exportSave">💾 Сохранить прогресс в файл</button>
     <label class="btn big file-btn">📂 Загрузить прогресс из файла<input type="file" accept=".json,application/json" id="importFile" hidden></label>
     <h3 class="sub">Опасная зона</h3>
     <button class="btn danger" data-act="resetAll">🗑 Сбросить весь прогресс</button>
   </div>`;
 }
-function exportSave() {
+/* Автокопия в «Загрузки» после важного события (победа над боссом, рост питомца, неделя) — не чаще раза в день */
+function autoBackup() {
+  if (!S.settings.autoBackup || S.lastAutoDay === U.dayKey()) return;
+  S.lastAutoDay = U.dayKey();
+  setTimeout(() => { exportSave(true); toast('💾 Копия прогресса сохранена в «Загрузки»'); }, 1500);
+}
+function exportSave(quiet) {
   const data = JSON.stringify(S, null, 1);
   const blob = new Blob([data], { type: 'application/json' });
   const a = document.createElement('a');
@@ -1591,6 +1818,7 @@ function exportSave() {
   document.body.appendChild(a); a.click();
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
   S.lastBackup = Date.now(); save();
+  if (quiet) return;
   toast('💾 Файл сохранён в «Загрузки»');
   parentPanel('backup');
 }
@@ -1621,7 +1849,7 @@ function onboarding() {
     if (step === 0) {
       ov.innerHTML = `<div class="onb-card"><div class="onb-logo">📖✨</div><h1>Букваландия</h1>
         <p>В волшебной стране Букваландии жили-были буквы. Но злой <b>Кляксус</b> всё перепутал: буквы потерялись, слова сломались, а в соседнем Числограде разбежались все числа!</p>
-        <p>Только ты и твой питомец можете спасти Букваландию. Готов?</p>
+        <p>Только ты и твой питомец можете спасти Букваландию. Вперёд?</p>
         <button class="btn primary big" data-o="next">Начать приключение!</button></div>`;
     } else if (step === 1) {
       ov.innerHTML = `<div class="onb-card"><div class="onb-logo">👋</div><h2>Как тебя зовут?</h2>
@@ -1711,13 +1939,18 @@ const ACTIONS = {
   resClose: () => { Back.done(); closeLesson(); },
   again: a => { Back.done(); closeLesson(); setTimeout(() => startSession('lesson', a), 50); },
   bossAgain: a => { Back.done(); closeLesson(); setTimeout(() => startSession('boss', a), 50); },
-  petTap: () => petTap(),
+  riddle: () => openRiddle(),
+  hideSeek: () => Room.hideSeek(),
+  piggySet: a => piggySet(a),
+  piggyPut: () => piggyPut(),
+  piggyClaim: () => piggyClaim(),
+  piggyOpen: () => { TAB = 'shop'; SHOP_TAB = 'prizes'; Sound.play('tap'); render(); },
+  piggyBack: () => { S.coins += S.piggy.saved; S.piggy.saved = 0; save(); parentPanel('prizes'); toast('Монеты возвращены в кошелёк'); },
   feed: () => openFeed(),
   wardrobe: () => openWardrobe(),
   shopTab: a => { SHOP_TAB = a; Sound.play('tap'); render(); },
   buy: a => buy(a),
   equip: a => equip(a),
-  buyPrize: a => buyPrize(a),
   buyGame: a => buyGame(a),
   gameClose: () => { Back.done(); closeGame(); },
   medal: a => { const m = ACH.find(x => x.id === a); modal({ html: `<div class="medal-big ${S.ach[a] ? '' : 'gray'}">${S.ach[a] ? m.icon : '❔'}</div><h2>${m.name}</h2><p>${m.desc}</p><p class="reward">${S.ach[a] ? 'Получена ' + new Date(S.ach[a]).toLocaleDateString('ru-RU') : 'Награда: ' + m.reward + ' <i class="ci"></i>'}</p>` }); },
