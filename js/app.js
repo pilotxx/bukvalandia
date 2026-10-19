@@ -4,7 +4,7 @@
    ============================================================ */
 
 const KEY = 'bukvalandia_v1';   // ключ хранилища не меняем: в нём прогресс ребёнка
-const VERSION = 4;
+const VERSION = 5;
 const LESSON_LEN = 10;
 let S = null;               // состояние
 let TAB = 'map';
@@ -28,7 +28,7 @@ function defaults() {
     history: {}, streak: { last: '', count: 0, best: 0 }, bestCombo: 0,
     pet: { species: 'dragon', name: '', color: null, hat: null, glasses: null, neck: null, body: null, feet: null, back: null, costume: null, satiety: 70, tick: Date.now(), stageSeen: 0, maxStage: 0, microSeen: 0 },
     owned: { th_sky: true, ball: true }, food: {}, hidden: {},
-    room: { pos: {} }, costumes: {}, riddle: { day: '', n: 0 }, greetDay: '',
+    room: { pos: {} }, costumes: {}, memoSeen: {}, riddle: { day: '', n: 0 }, greetDay: '',
     piggy: { goal: null, saved: 0 },
     gameProg: {},
     theme: 'sky', ach: {}, mistakes: [],
@@ -79,9 +79,15 @@ function migrate() {
     S.owned.ball = true;
     S.pet.microSeen = PET_MICRO.filter(m => totalStars() >= m.at).length;
   }
+  if ((S.v || 1) < 5) {
+    /* версия 5: побеждённые боссы — плюшевые игрушки в домике; уже побеждённым — сразу */
+    ALL_WORLDS.forEach(w => { if (S.bosses[w.id]) S.owned['boss_' + w.boss.id] = true; });
+  }
   S.v = VERSION;
 }
+let RESETTING = false;      // идёт сброс прогресса — больше ничего не сохранять (иначе автосохранение вернёт старое)
 function save() {
+  if (RESETTING) return;
   try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { /* хранилище недоступно */ }
 }
 /* Автосохранение: каждые 30 секунд и при сворачивании; просим браузер не стирать данные сам */
@@ -425,6 +431,7 @@ function applyTheme() {
   Sound.enabled = S.settings.sound;
   Speech.enabled = S.settings.tts;
   Speech.petOn = S.settings.petVoice;
+  PetVoice.load(S.pet.species);
 }
 function render() {
   applyTheme();
@@ -555,6 +562,7 @@ function openLessonSheet(id) {
     cls: 'sheet',
     html: `<div class="sheet-head" style="--c1:${les.world.c1};--c2:${les.world.c2}"><span class="sh-ic">${les.icon}</span><div><small>${les.world.name} · ${les.grade} класс</small><h2>${les.title}</h2>
       <div class="sh-stars">${[1, 2, 3].map(k => `<i class="${k <= st ? 'on' : ''}">★</i>`).join('')}${s ? `<span>лучший результат: ${s.best}%</span>` : ''}</div></div></div>
+      ${RU_MEMO[id] ? `<div class="memo"><span class="memo-pet">${petSVG({ uid: 'memo', mood: 'wow' })}</span><p>${RU_MEMO[id]}</p><button class="say" data-memo="1" aria-label="Послушать">🔊</button></div>` : ''}
       <div class="rule"><div class="rule-t">📘 Вспомни правило <button class="say" data-say="1" aria-label="Прочитать вслух">🔊</button></div><div class="rule-b">${les.rule}</div></div>
       <div class="goals"><span>⭐ 6 из 10 верно с первой попытки</span><span>⭐⭐ 8 из 10 — без ошибок и подсказок</span><span>⭐⭐⭐ 9 из 10 — без ошибок и подсказок</span></div>
       ${les.subject.id === 'math' && st >= 2 ? '<p class="small">📈 На 2+ звёздах примеры становятся сложнее.</p>' : ''}
@@ -563,6 +571,11 @@ function openLessonSheet(id) {
     buttons: [{ label: 'Закрыть', cls: 'ghost' }, { label: r.kind === 'review' ? 'Повторить 🔁' : st ? 'Пройти ещё раз' : 'Начать урок', cls: 'primary big', onClick: () => { startSession('lesson', id); } }],
   });
   m.querySelector('[data-say]').addEventListener('click', () => Speech.say(les.rule));
+  const mb = m.querySelector('[data-memo]');
+  if (mb) {
+    mb.addEventListener('click', () => Speech.sayPet(RU_MEMO[id], petStage()));
+    if (!S.memoSeen[id]) { S.memoSeen[id] = 1; save(); setTimeout(() => Speech.sayPet(RU_MEMO[id], petStage()), 400); }
+  }
   const rb = m.querySelector('[data-rec]');
   if (rb) rb.addEventListener('click', () => { const to = rb.dataset.rec; m.close(); setTimeout(() => openLessonSheet(to), 220); });
 }
@@ -587,7 +600,7 @@ function openBossSheet(wid) {
 function makeTask(lid, i) {
   const les = LESSONS[lid];
   try {
-    const t = les.make(les.bank[i]);
+    const t = MathFun.transform(RuFun.transform(les.make(les.bank[i]), les, i), les, i);   // русский и математика: часть заданий — игровые
     t.lid = lid; t.idx = i;
     return t;
   } catch (e) { console.error('Ошибка генерации', lid, i, e); return null; }
@@ -683,17 +696,20 @@ function startSession(mode, ref) {
   ov.id = 'lesson';
   ov.style.setProperty('--c1', world ? world.c1 : mode === 'mul' ? '#C3A6FF' : '#FF9EC4');
   ov.style.setProperty('--c2', world ? world.c2 : mode === 'mul' ? '#8A5CF6' : '#E8569A');
+  if (mode === 'boss') ov.classList.add('boss-ov');
   ov.innerHTML = `<div class="l-top"><button class="x" data-act="quit" aria-label="Выйти">✕</button>
-      ${mode === 'boss' ? `<div class="boss-bar"><span class="b-emo" id="bEmo">${world.boss.emoji}</span><div class="hp"><div id="hpBar" style="width:100%"></div></div><span class="hearts" id="hearts">❤️❤️❤️</span></div>`
-    : `<div class="l-progress"><div id="lProg"></div></div>`}
+      ${mode === 'boss' ? Boss.topHTML(world) : `<div class="l-progress"><div id="lProg"></div></div>`}
       <div class="combo" id="combo"></div></div>
+    ${mode === 'lesson' ? RuFun.blotHTML(world) : ''}${mode === 'boss' ? Boss.arenaHTML(world) : ''}
     <div class="l-title">${mode === 'lesson' ? LESSONS[ref].icon + ' ' + LESSONS[ref].title : mode === 'boss' ? '⚔️ Бой: ' + world.boss.name : mode === 'mul' ? '✖️ Тренажёр таблицы умножения' : '🩹 Работа над ошибками'}${L.factor < 1 ? ` <span class="fresh-tag">монеты ${Math.round(L.factor * 100)}%</span>` : ''}</div>
     <div class="l-body" id="lBody"></div>
     <div class="l-foot" id="lFoot"></div>
+    ${mode === 'boss' ? Boss.petHTML() : ''}
     <div class="feedback" id="fb"></div>`;
   document.body.appendChild(ov);
   document.body.classList.add('no-scroll');
   Back.push(() => { askQuit(); return false; });
+  if (mode === 'boss') Boss.start();
   showTask();
 }
 function askQuit() {
@@ -713,12 +729,14 @@ function closeLesson() {
   L = null;
   GEN.boost = 0;
   Speech.enabled && 'speechSynthesis' in window && speechSynthesis.cancel();
+  BossVoice.stop();
   render();
   setTimeout(flushQueue, 300);
 }
 
 function curTask() { return L.queue[L.pos]; }
 function showTask() {
+  if (L.mode === 'boss') Boss.prepTask();
   const e = curTask(), t = e.t;
   L.answered = false; L.hint = false; L.shown = Date.now(); L.ord = []; L.typed = '';
   const body = $('#lBody');
@@ -751,15 +769,21 @@ function showTask() {
     ans = `<div class="ord-line ${t.join === '' ? 'letters' : ''}" id="ordLine"><span class="ph">${t.join === '' ? 'Нажимай на буквы по порядку' : 'Нажимай на слова по порядку'}</span></div>
       <div class="ord-pool ${t.join === '' ? 'letters' : ''}" id="ordPool">${t.pieces.map((p, i) => `<button class="piece" data-act="ordAdd" data-arg="${i}">${U.esc(p)}</button>`).join('')}</div>`;
   }
+  if (t.kind === 'mf') ans = MathFun.html(t);
+  else if (t.ui) ans = RuFun.html(t);
   body.innerHTML = `${e.retry ? '<div class="retry-tag">🔁 Исправь ошибку</div>' : e.fromMistake || e.fix ? '<div class="retry-tag fix">🩹 Повторение</div>' : ''}
     <div class="prompt"><span>${t.prompt}</span>${Speech.available() && S.settings.tts ? `<button class="say" data-act="say" aria-label="Прочитать вслух">🔊</button>` : ''}</div>
     ${show}<div class="ans">${ans}</div><div class="hintbox" id="hintbox"></div>`;
+  body.scrollTop = 0;
+  if (t.kind === 'mf') MathFun.bind(t, body);
+  else if (t.ui) RuFun.bind(t, body);
   body.classList.remove('enter'); void body.offsetWidth; body.classList.add('enter');
   if (canSay && t.auto) setTimeout(() => { if (L && L.queue[L.pos] === e && !L.answered) Speech.sayEn(t.say); }, 450);
   const foot = $('#lFoot');
   foot.innerHTML = `${L.mode !== 'boss' ? '<button class="btn hint" data-act="hint">💡 Подсказка</button>' : ''}
     ${t.kind === 'order' ? '<button class="btn primary" data-act="ordCheck" id="ordCheck" disabled>Проверить</button>' : ''}`;
   $('#fb').className = 'feedback';
+  if (L.mode === 'boss') Boss.onTask(e);
 }
 function sayTask() {
   const t = curTask().t;
@@ -824,6 +848,7 @@ function answer(val) {
   else if (t.kind === 'stress' || t.kind === 'tap') ok = +val === t.answer;
   else if (t.kind === 'order') ok = t.answers.includes(L.ord.map(i => t.pieces[i]).join(t.join ?? ' '));
   else if (t.kind === 'input') ok = String(Number(val)) === String(Number(t.answer));
+  else if (RuFun.KINDS.includes(t.kind) || MathFun.KINDS.includes(t.kind)) ok = val === 'ok';
   L.answered = true;
   const fast = Date.now() - L.shown < 1300;
   const d = day();
@@ -894,14 +919,15 @@ function answer(val) {
     L.coins += gain;
     if (L.combo > S.bestCombo) S.bestCombo = L.combo;
     L.fastWrong = 0;
-    if (L.mode === 'boss') bossHit();
+    if (L.mode === 'boss') Boss.correct(e, t);
+    if (L.mode === 'lesson' && !e.retry) RuFun.unblot();
     Sound.play(L.combo >= 5 && L.combo % 5 === 0 ? 'combo' : 'right');
   } else {
     L.combo = 0;
     d.wrong++; S.counters.wrong++;
     if (!e.retry) L.wrongs++;
     if (t.lid) addMistake(t.lid, t.idx, t.label);
-    if (L.mode === 'boss') heroHit();
+    if (L.mode === 'boss') Boss.wrong();
     else if (!e.retry || e.retryCount < 2) {
       const nt = L.mode === 'mul' ? mulTask(e.mul[0], e.mul[1]) : makeTask(t.lid, t.idx);
       if (nt) L.queue.push({ t: nt, retry: true, retryCount: (e.retryCount || 0) + 1, fix: e.fix, mul: e.mul });
@@ -911,12 +937,16 @@ function answer(val) {
   }
   renderCombo();
   const exp = t.explainFor ? t.explainFor(String(val)) : t.explain;
-  const titles = ok ? (e.retry ? ['Исправлено! 👏'] : ['Верно!', 'Молодец!', 'Отлично!', 'Правильно!', 'Здорово!']) : ['Не совсем…', 'Ошибочка!', 'Почти!'];
+  const titles = ok ? (L.mode === 'boss' && L.lastCrit ? ['Суперудар! 💥'] : e.shield ? ['Щит разбит! 🛡️'] : e.retry ? ['Исправлено! 👏'] : ['Верно!', 'Молодец!', 'Отлично!', 'Правильно!', 'Здорово!']) : ['Не совсем…', 'Ошибочка!', 'Почти!'];
   const fb = $('#fb');
   fb.innerHTML = `<div class="fb-in"><div class="fb-h"><span class="fb-ic">${ok ? '✅' : '🧐'}</span><b>${U.rnd(titles)}</b>${gain ? `<span class="fb-coins">+${gain} <i class="ci"></i></span>` : ''}</div>
     ${exp ? `<div class="fb-exp">${exp}</div>` : ''}
     <button class="btn ${ok ? 'primary' : 'warm'} big" data-act="next">${ok ? 'Дальше' : 'Понятно'}</button></div>`;
-  fb.className = 'feedback show ' + (ok ? 'ok' : 'bad');
+  const fbCls = 'feedback show ' + (ok ? 'ok' : 'bad');
+  if (L.mode !== 'boss') fb.className = fbCls;
+  /* бой: сначала видно, как летит снаряд; последний удар — сразу расколдовывание, без панели */
+  else if (L.hp <= 0) Boss.defeat(() => finishBoss(true));
+  else setTimeout(() => { if (L && L.queue[L.pos] === e && !L.finished) fb.className = fbCls; }, 900);
   /* английский: после ответа ещё раз звучит правильное слово или фраза */
   const after = t.sayAfter || t.say;
   if (after && Speech.enOk()) setTimeout(() => Speech.sayEn(after), ok ? 350 : 700);
@@ -931,20 +961,11 @@ function renderCombo() {
     c.className = 'combo show' + (L.combo >= 10 ? ' hot' : '');
   } else c.className = 'combo';
 }
-function bossHit() {
-  L.hp = Math.max(0, L.hp - 1);
-  $('#hpBar').style.width = (100 * L.hp / L.hpMax) + '%';
-  const b = $('#bEmo'); b.classList.remove('hit'); void b.offsetWidth; b.classList.add('hit');
-  setTimeout(() => Sound.play('hit'), 150);
-}
-function heroHit() {
-  L.hearts = Math.max(0, L.hearts - 1);
-  $('#hearts').innerHTML = '❤️'.repeat(L.hearts) + '<span class="lost">🤍</span>'.repeat(3 - L.hearts);
-}
 function next() {
   if (!L) return;
   Sound.play('tap');
   if (L.mode === 'boss') {
+    if (L.defeating) return;
     if (L.hp <= 0) return finishBoss(true);
     if (L.hearts <= 0) return finishBoss(false);
     if (L.pos + 1 >= L.queue.length) L.queue.push(...bossTasks(L.world, 5));
@@ -1053,6 +1074,7 @@ function finishLesson() {
   showResult(html);
 }
 function finishBoss(win) {
+  if (L.finished) return;
   const stageBefore = petStage();
   commonFinish();
   const w = L.world, wi = w.wi, first = !S.bosses[w.id];
@@ -1063,21 +1085,27 @@ function finishBoss(win) {
     if (L.fresh) weekly('lesson');
     const reward = first ? 150 + 60 * wi : Math.round(30 * L.factor);
     const got = earnCoins(L.coins * L.petMul) + earnCoins(reward, true);
+    const toy = 'boss_' + w.boss.id, newToy = !S.owned[toy];
+    S.owned[toy] = true;
+    L.chest = Boss.chestPrize(first, wi);
     if (first) { S.bosses[w.id] = true; weekly('star', 3); autoBackup(); }
     addXP(L.xp + (first ? 200 : 20));
-    Sound.play('level'); confetti(120);
     const nextW = w.subject.worlds[wi + 1];
-    html = `<div class="result win"><div class="boss-defeat">${w.boss.emoji}</div><h2>Победа!</h2><p>${w.boss.name} повержен!</p>
+    const saved = { math: 'Числоград спасён', en: 'Остров Hello спасён', ru: 'Букваландия спасена' }[w.subject.id];
+    html = `<div class="result win"><div class="boss-kind">${w.boss.emoji}</div><h2>Победа!</h2><p>Чары развеяны! ${w.boss.name} больше не злится.</p>
+      ${Boss.chestHTML()}<p class="chest-tip">Нажми на сундук!</p>
+      <div class="after-chest" hidden>
+      <div class="prize-card">${L.chest.html}</div>
+      ${newToy ? `<div class="prize-card toy">${w.boss.emoji} В домике новая игрушка: <b>${w.boss.name}</b>. Её можно обнять!</div>` : ''}
       <div class="res-coins">+${got} <i class="ci"></i> <span>+${L.xp + (first ? 200 : 20)} опыта</span></div>
       ${first && nextW ? `<div class="unlock-card" style="--c1:${nextW.c1};--c2:${nextW.c2}">${nextW.emoji} Открыт новый мир: <b>${nextW.name}</b></div>` : ''}
-      ${first && !nextW ? `<div class="unlock-card">👑 ${w.subject.id === 'math' ? 'Числоград спасён' : 'Букваландия спасена'}! Это настоящий подвиг!</div>` : ''}
-      <div class="res-pet">${petSVG({ mood: 'wow', uid: 'rp' })}</div>
-      <button class="btn primary big" data-act="resClose">На карту</button></div>`;
+      ${first && !nextW ? `<div class="unlock-card">👑 ${saved}! Это настоящий подвиг!</div>` : ''}
+      <button class="btn primary big" data-act="resClose">На карту</button></div></div>`;
   } else {
     const got = earnCoins(L.coins * L.petMul);
     addXP(L.xp);
     Sound.play('lose');
-    html = `<div class="result lose"><div class="boss-laugh">${w.boss.emoji}</div><h2>${w.boss.name} оказался сильнее</h2>
+    html = `<div class="result lose"><div class="boss-laugh">${w.boss.emoji}</div><h2>${w.boss.name} пока сильнее</h2>
       <p>Не сдавайся! Повтори темы этого мира и попробуй снова. Боссы побеждаются тренировкой!</p>
       <div class="res-coins">+${got} <i class="ci"></i></div>
       <div class="res-btns"><button class="btn ghost" data-act="resClose">На карту</button><button class="btn primary" data-act="bossAgain" data-arg="${w.id}">Ещё раз</button></div></div>`;
@@ -1243,7 +1271,7 @@ function openWardrobe() {
     const have = c.items.filter(id => S.owned[id]).length;
     return `<button class="wd-it cos ${have === c.items.length ? 'full' : ''} ${S.pet.costume === c.id ? 'on' : ''}" data-cos="${c.id}">${c.icon}<small>${c.name}<br>${have} из ${c.items.length}</small></button>`;
   }).join('')}</div></div>` + (() => {
-    const dec = [...SHOP, ...EXCLUSIVE].filter(i => i.cat === 'decor' && S.owned[i.id]);
+    const dec = [...SHOP, ...EXCLUSIVE, ...BOSS_TOYS].filter(i => i.cat === 'decor' && S.owned[i.id]);
     return dec.length ? `<div class="wd-sec"><b>Домик (показать / спрятать)</b><div class="wd-row">${dec.map(i => `<button class="wd-it ${S.hidden[i.id] ? '' : 'on'}" data-dec="${i.id}">${i.icon}<small>${i.name}</small></button>`).join('')}</div>
       <button class="link" data-roomreset="1">Расставить подарки как было</button></div>` : '';
   })();
@@ -1504,7 +1532,7 @@ function openRiddle() {
       msg = `Не совсем… Правильно: ${r.full}`;
       m.querySelector('.rd-res').innerHTML = `💡 Правильно: <b>${U.esc(r.full)}</b>`;
     }
-    Speech.sayPet(msg.replace(/\(.*\)/, ''), petStage());
+    Speech.sayPet(ok ? msg : 'Не совсем… Посмотри, как правильно!', petStage());
     if (r.en && Speech.enOk()) setTimeout(() => Speech.sayEn(r.en), 1800);
     m.querySelector('.modal-btns .btn').textContent = 'Хорошо';
     checkAch(); save(); render();
@@ -1871,6 +1899,7 @@ function onboarding() {
     } else {
       S.name = data.name || 'Герой';
       S.pet.species = data.species;
+      PetVoice.load(S.pet.species);
       S.settings.openAll = data.grade === 3;
       S.onboarded = true;
       S.seenSubjects = Object.fromEntries(SUBJECTS.map(s => [s.id, true]));
@@ -1937,6 +1966,7 @@ const ACTIONS = {
   ordDel: a => { if (L.answered) return; L.ord.splice(+a, 1); Sound.play('tap'); renderOrder(); },
   ordCheck: () => answer(),
   resClose: () => { Back.done(); closeLesson(); },
+  chestOpen: () => Boss.openChest(),
   again: a => { Back.done(); closeLesson(); setTimeout(() => startSession('lesson', a), 50); },
   bossAgain: a => { Back.done(); closeLesson(); setTimeout(() => startSession('boss', a), 50); },
   riddle: () => openRiddle(),
@@ -1965,6 +1995,7 @@ const ACTIONS = {
   exportSave: () => exportSave(),
   resetAll: () => confirmBox('<div class="m-icon">⚠️</div><h2>Сбросить всё?</h2><p>Звёзды, монеты, питомец и покупки будут удалены. Сначала сохраните файл резервной копии!</p>', 'Сбросить', () => {
     setTimeout(() => confirmBox('<h2>Точно сбросить?</h2><p>Отменить будет нельзя.</p>', 'Да, сбросить', () => {
+      RESETTING = true;
       try { localStorage.removeItem(KEY); } catch (e) { /* */ }
       location.reload();
     }), 250);
@@ -2028,6 +2059,8 @@ function boot() {
   load();
   tick();
   Speech.init();
+  PetVoice.load(S.pet.species);
+  EnVoice.load();
   applyTheme();
   save();
   render();

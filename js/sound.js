@@ -65,29 +65,29 @@ const Speech = {
     speechSynthesis.onvoiceschanged = pick;
   },
   available: () => 'speechSynthesis' in window,
-  enOk() { return this.available() && !!this.enVoice; },
+  /* Английский звучит, если есть записи (EnVoice) или системный английский голос */
+  enOk() { return EnVoice.ready() || (this.available() && !!this.enVoice); },
   /* Английская речь звучит всегда (это часть задания), даже если озвучка русских заданий выключена */
   sayEn(text, slow = false) {
-    if (!this.enOk()) return;
+    EnVoice.stop();
+    if (this.available()) speechSynthesis.cancel();
+    if (!EnVoice.play(text, slow)) this.synthEn(text, slow);
+  },
+  /* системный английский голос (если записи нет) */
+  synthEn(text, slow = false) {
+    if (!this.available() || !this.enVoice) return;
     speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
     u.voice = this.enVoice; u.lang = this.enVoice.lang;
     u.rate = slow ? 0.55 : 0.85; u.pitch = 1.05;
     speechSynthesis.speak(u);
   },
-  /* Голос питомца: выше обычного («мультяшный»), с возрастом чуть ниже; шёпот — тише и медленнее.
+  /* Голос питомца — записи нейроголосом (PetVoice), а где записи нет — «звериный лепет».
      Звучит, только если в настройках включён «Голос питомца» (не зависит от озвучки заданий) */
   petOn: true,
   sayPet(text, stage = 2, whisper = false) {
-    if (!this.petOn || !this.available()) return;
-    speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(String(text).replace(/[^\p{L}\p{N}\s.,!?…:;—–\-«»"']/gu, ' ').replace(/\s+/g, ' ').trim());
-    u.lang = 'ru-RU';
-    u.pitch = Math.min(2, [1.7, 1.7, 1.55, 1.4, 1.3][Math.max(0, Math.min(4, stage))] - (whisper ? 0.1 : 0));
-    u.rate = whisper ? 0.8 : 1.02;
-    u.volume = whisper ? 0.55 : 1;
-    if (this.voice) u.voice = this.voice;
-    speechSynthesis.speak(u);
+    if (!this.petOn) return;
+    PetVoice.say(text, stage, whisper);
   },
   say(html) {
     if (!this.enabled || !this.available()) return;
@@ -99,5 +99,92 @@ const Speech = {
     u.lang = 'ru-RU'; u.rate = 0.92; u.pitch = 1.1;
     if (this.voice) u.voice = this.voice;
     speechSynthesis.speak(u);
+  },
+};
+
+/* ---------- Голос питомца ----------
+   Все постоянные фразы заранее озвучены нейроголосом (свой голос у каждого вида питомца) и лежат в voice/<вид>.js.
+   Фраза ищется по тексту; если записи нет (числа, имя) — питомец «лепечет» милыми звуками, текст — в облачке.
+   С возрастом голос чуть ниже и спокойнее (скорость/тон записи). Файлы делает «Букваландия (разработка)/озвучка/озвучить.py». */
+const PetVoice = {
+  sp: null, pack: null, cur: null,
+  key: t => String(t).toLowerCase().replace(/ё/g, 'е').replace(/[^a-zа-я0-9]/g, ''),
+  load(species) {
+    if (!species || this.sp === species) return;
+    this.sp = species; this.pack = null;
+    const s = document.createElement('script');
+    s.src = `voice/${species}.js`;
+    s.onload = () => { if (this.sp === species && window.VOICE_PACK) this.pack = window.VOICE_PACK; };
+    s.onerror = () => { /* нет файла или нет сети — будет лепет */ };
+    document.head.appendChild(s);
+  },
+  stop() { if (this.cur) { try { this.cur.pause(); } catch (e) { /* */ } this.cur = null; } },
+  say(text, stage = 2, whisper = false) {
+    this.stop(); EnVoice.stop();
+    try { if ('speechSynthesis' in window) speechSynthesis.cancel(); } catch (e) { /* */ }
+    const b64 = this.pack && this.pack[this.key(text)];
+    if (!b64) { this.babble(text, stage, whisper); return; }
+    const a = new Audio('data:audio/mpeg;base64,' + b64);
+    a.preservesPitch = false; a.mozPreservesPitch = false; a.webkitPreservesPitch = false;
+    a.playbackRate = [1.1, 1.1, 1.05, 1, 0.96][Math.max(0, Math.min(4, stage))];
+    a.volume = whisper ? 0.5 : 1;
+    this.cur = a;
+    a.play().catch(() => this.babble(text, stage, whisper));
+  },
+  /* «Звериный язык»: по слогу — короткий звук; у каждого вида свой тон, к концу вопроса тон поднимается */
+  babble(text, stage = 2, whisper = false) {
+    Sound.init(); const c = Sound.ctx; if (!c) return;
+    if (c.state === 'suspended') c.resume();
+    const t = String(text);
+    const syl = Math.max(2, Math.min(14, [...t.toLowerCase()].filter(ch => 'аоуыэеёюяиaeiouy'.includes(ch)).length));
+    const base = { dragon: 260, cat: 420, bunny: 540 }[S && S.pet ? S.pet.species : 'cat'] * [1.25, 1.25, 1.12, 1, 0.92][Math.max(0, Math.min(4, stage))];
+    const ask = /\?\s*$/.test(t);
+    const vol = whisper ? 0.04 : 0.09;
+    let at = 0;
+    for (let i = 0; i < syl; i++) {
+      const f = base * (0.88 + Math.random() * 0.3) * (ask && i >= syl - 2 ? 1.3 : 1);
+      const d = 0.06 + Math.random() * 0.05;
+      const o = c.createOscillator(), g = c.createGain(), t0 = c.currentTime + at;
+      o.type = 'triangle';
+      o.frequency.setValueAtTime(f, t0); o.frequency.exponentialRampToValueAtTime(f * 1.18, t0 + d);
+      g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(vol, t0 + 0.012); g.gain.exponentialRampToValueAtTime(0.0001, t0 + d);
+      o.connect(g).connect(c.destination); o.start(t0); o.stop(t0 + d + 0.03);
+      at += d + 0.035 + (/[,.!…]/.test(t[Math.floor((i + 1) * t.length / syl)] || '') ? 0.12 : 0);
+    }
+  },
+};
+
+/* ---------- Английский голос ----------
+   Все английские слова и фразы уроков заранее озвучены британским нейроголосом (Libby) и лежат в voice/en.js —
+   так английский звучит и там, где на устройстве нет английского системного голоса. Фраза ищется по тексту
+   (только латинские буквы и цифры); нет записи — говорит системный голос, если он есть.
+   Медленно (🐢) — та же запись на 0,7 скорости без смены тона. Файл делает «озвучка/озвучить.py en». */
+const EnVoice = {
+  pack: null, cur: null, loading: false,
+  key: t => String(t).toLowerCase().replace(/[^a-z0-9]/g, ''),
+  load() {
+    if (this.pack || this.loading) return;
+    this.loading = true;
+    const s = document.createElement('script');
+    s.src = 'voice/en.js';
+    s.onload = () => { if (window.EN_PACK) this.pack = window.EN_PACK; };
+    s.onerror = () => { this.loading = false; /* нет файла или сети — системный голос */ };
+    document.head.appendChild(s);
+  },
+  ready() { return !!this.pack; },
+  stop() { if (this.cur) { try { this.cur.pause(); } catch (e) { /* */ } this.cur = null; } },
+  /* true — запись нашлась и запущена */
+  play(text, slow = false) {
+    const b64 = this.pack && this.pack[this.key(text)];
+    if (!b64) return false;
+    const a = new Audio('data:audio/mpeg;base64,' + b64);
+    a.preservesPitch = true; a.mozPreservesPitch = true; a.webkitPreservesPitch = true;
+    a.playbackRate = slow ? 0.7 : 1;
+    this.cur = a;
+    a.play().catch(() => {
+      /* не дали играть (нет касания экрана) или запись испорчена — пробуем системный голос */
+      if (this.cur === a) Speech.synthEn(text, slow);
+    });
+    return true;
   },
 };

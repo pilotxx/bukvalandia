@@ -352,8 +352,8 @@ const EN_WORLDS = [
         bank: [['pen', 'pens', '🖊️'], ['cat', 'cats', '🐱'], ['book', 'books', '📖'], ['apple', 'apples', '🍎'], ['box', 'boxes', '📦'], ['car', 'cars', '🚗'], ['ball', 'balls', '⚽'], ['bag', 'bags', '🎒']],
         make([sg, pl, em]) {
           const many = Math.random() < 0.5;
-          const v = Math.random() < 0.5;
-          const s = v ? (many ? `[These|This] are ${pl}.` : `[This|These] is a ${sg}.`) : (many ? `These [are|is] ${pl}.` : `This [is|are] a ${sg}.`);
+          const v = Math.random() < 0.5, art = /^[aeiou]/.test(sg) ? 'an' : 'a';
+          const s = v ? (many ? `[These|This] are ${pl}.` : `[This|These] is ${art} ${sg}.`) : (many ? `These [are|is] ${pl}.` : `This [is|are] ${art} ${sg}.`);
           return enGap(s, v ? 'Вставь <b>this</b> или <b>these</b>' : 'Вставь <b>is</b> или <b>are</b>', { pic: many ? em + em + em : em, small: true,
             explain: g => many ? `<b>${g.full}</b> — много предметов: <b>these are</b>.` : `<b>${g.full}</b> — один предмет: <b>this is</b>.`, label: (many ? pl : sg) + (v ? ' this' : ' is') });
         },

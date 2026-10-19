@@ -21,7 +21,7 @@ const Room = {
     const p = S.room.pos[i.id];
     return p ? { x: p[0], y: p[1] } : { x: i.x, y: i.y };
   },
-  decor() { return [...SHOP, ...EXCLUSIVE].filter(i => i.cat === 'decor' && S.owned[i.id] && !S.hidden[i.id]); },
+  decor() { return [...SHOP, ...EXCLUSIVE, ...BOSS_TOYS].filter(i => i.cat === 'decor' && S.owned[i.id] && !S.hidden[i.id]); },
   night() {
     const from = S.settings.sleepFrom;
     if (!from) return false;
@@ -126,8 +126,10 @@ const Room = {
     const k = depthK(Room.pet.y);
     const top = (Room.pet.y - PET_BOX * 1.02 * k) * Room.s;
     b.textContent = text;
-    b.style.left = Math.max(70, Math.min(Room.root.clientWidth - 70, Room.pet.x * Room.s)) + 'px';
-    b.style.top = Math.max(26, top) + 'px';
+    /* в прятках облачко — посередине сверху, чтобы не выдать, где спрятался питомец */
+    const x = Room.hide ? Room.root.clientWidth / 2 : Room.pet.x * Room.s;
+    b.style.left = Math.max(70, Math.min(Room.root.clientWidth - 70, x)) + 'px';
+    b.style.top = (Room.hide ? 60 : Math.max(26, top)) + 'px';
     b.className = 'pet-say show';
     clearTimeout(b._t);
     b._t = setTimeout(() => { b.className = 'pet-say'; }, Math.max(2200, text.length * 70));
@@ -185,7 +187,7 @@ const Room = {
       Room.anim('a-dance'); Room.say(U.rnd(['Танцуем!', 'Раз-два, раз-два!', 'Я танцую!']));
       Room.melody('dance'); await wait(2200);
     } else if (r < 0.6) {
-      Room.draw('sleep'); Room.say('Ааах… — зевает'); await wait(1600);
+      Room.draw('sleep'); Room.say('Ааа-ах… Что-то спать хочется.'); await wait(1600);
     } else if (r < 0.8) {
       /* бабочка пролетает — питомец следит и пытается поймать */
       const b = document.createElement('span'); b.className = 'rfx butterfly'; b.textContent = '🦋';
@@ -252,7 +254,7 @@ const Room = {
         await wait(1500); break;
       }
       case 'hug': Room.draw('love'); Room.anim('a-jump'); Room.itemFx(i.id, 'wiggle'); Room.hearts(4);
-        say(U.rnd([`Обнимашки с ${i.id === 'teddy' ? 'мишкой' : 'другом'}!`, 'Я тебя люблю, дружок!', 'Какой мягкий!'])); Sound.play('pet'); await wait(2200); break;
+        say(U.rnd([i.id === 'teddy' ? 'Обнимашки с мишкой!' : 'Обнимашки с другом!', 'Я тебя люблю, дружок!', 'Какой мягкий!'])); Sound.play('pet'); await wait(2200); break;
       case 'water': Room.anim('a-kick'); say('Полью цветочек!');
         for (let n = 0; n < 6; n++) setTimeout(() => Room.fx('💧', ip.x + Math.random() * 30 - 15, ip.y - i.h, 'fx-fall', 900, 18), n * 150);
         await wait(1100); Room.itemFx(i.id, 'grow', 1000); Room.fx('✨', ip.x, ip.y - i.h, 'fx-rise'); say('Расти большой!'); await wait(1300); break;
@@ -552,7 +554,7 @@ const Room = {
       const p = Room.pos(ITEMS[id]);
       Room.fx('❌', p.x, p.y - ITEMS[id].h * 0.6, 'fx-pop', 800, 26);
       Sound.play('tap');
-      if (h.tries === 3) Room.say('Подсказка: я за чем-то ' + (ITEMS[h.id].h >= 130 ? 'очень большим' : 'не очень большим') + '!');
+      if (h.tries === 3) Room.say(ITEMS[h.id].h >= 130 ? 'Подсказка: я за чем-то очень большим!' : 'Подсказка: я за чем-то не очень большим!');
       return;
     }
     const g = Room.gen;
@@ -561,7 +563,7 @@ const Room = {
     Room.petEl.classList.remove('hidden');
     Room.pet.y = Math.min(FOOT_MAX, Room.pet.y + 30); Room.pet.x += 40; Room.place(300);
     Room.draw('laugh'); Room.anim('a-jump'); Sound.play('star'); confetti(30);
-    Room.say(h.tries === 1 ? 'С первого раза! Вот это глаза!' : `Ку-ку! Вот я где! Попыток: ${h.tries}.`, true);
+    Room.say(h.tries === 1 ? 'С первого раза! Вот это глаза!' : 'Ку-ку! Вот я где!', true);
     S.counters.play = (S.counters.play || 0) + 1;
     await wait(2000);
     if (Room.alive(g)) { Room.draw(); Room.anim(''); }
