@@ -102,8 +102,33 @@ const Speech = {
   },
 };
 
+/* ---------- Записи голоса частями ----------
+   Записи лежат частями не больше 4 МБ: voice/<имя>-1.js, voice/<имя>-2.js … (GitHub в браузере не принимает большие файлы).
+   Каждая часть вызывает voicePart(имя, номер, всего, {ключ фразы: mp3 в base64}); всего частей узнаём из первой.
+   done(pack) — когда пришли все части (если часть не пришла — то, что успело, или null). */
+const VoiceParts = {
+  wait: {},
+  load(name, done) {
+    const pack = {};
+    let total = 1;
+    const fin = () => done(Object.keys(pack).length ? pack : null);
+    const part = n => {
+      const id = name + '-' + n;
+      let got = false;
+      this.wait[id] = (tot, data) => { total = tot; Object.assign(pack, data); got = true; };
+      const s = document.createElement('script');
+      s.src = `voice/${id}.js`;
+      s.onload = () => { delete this.wait[id]; s.remove(); if (got && n < total) part(n + 1); else fin(); };
+      s.onerror = () => { delete this.wait[id]; s.remove(); fin(); };
+      document.head.appendChild(s);
+    };
+    part(1);
+  },
+};
+function voicePart(name, n, total, data) { const f = VoiceParts.wait[name + '-' + n]; if (f) f(total, data); }
+
 /* ---------- Голос питомца ----------
-   Все постоянные фразы заранее озвучены нейроголосом (свой голос у каждого вида питомца) и лежат в voice/<вид>.js.
+   Все постоянные фразы заранее озвучены нейроголосом (свой голос у каждого вида питомца) и лежат в voice/<вид>-N.js.
    Фраза ищется по тексту; если записи нет (числа, имя) — питомец «лепечет» милыми звуками, текст — в облачке.
    С возрастом голос чуть ниже и спокойнее (скорость/тон записи). Файлы делает «Букваландия (разработка)/озвучка/озвучить.py». */
 const PetVoice = {
@@ -112,11 +137,7 @@ const PetVoice = {
   load(species) {
     if (!species || this.sp === species) return;
     this.sp = species; this.pack = null;
-    const s = document.createElement('script');
-    s.src = `voice/${species}.js`;
-    s.onload = () => { if (this.sp === species && window.VOICE_PACK) this.pack = window.VOICE_PACK; };
-    s.onerror = () => { /* нет файла или нет сети — будет лепет */ };
-    document.head.appendChild(s);
+    VoiceParts.load(species, p => { if (this.sp === species) this.pack = p; });   // нет файлов или сети — будет лепет
   },
   stop() { if (this.cur) { try { this.cur.pause(); } catch (e) { /* */ } this.cur = null; } },
   say(text, stage = 2, whisper = false) {
@@ -155,7 +176,7 @@ const PetVoice = {
 };
 
 /* ---------- Английский голос ----------
-   Все английские слова и фразы уроков заранее озвучены британским нейроголосом (Libby) и лежат в voice/en.js —
+   Все английские слова и фразы уроков заранее озвучены британским нейроголосом (Libby) и лежат в voice/en-N.js —
    так английский звучит и там, где на устройстве нет английского системного голоса. Фраза ищется по тексту
    (только латинские буквы и цифры); нет записи — говорит системный голос, если он есть.
    Медленно (🐢) — та же запись на 0,7 скорости без смены тона. Файл делает «озвучка/озвучить.py en». */
@@ -165,11 +186,7 @@ const EnVoice = {
   load() {
     if (this.pack || this.loading) return;
     this.loading = true;
-    const s = document.createElement('script');
-    s.src = 'voice/en.js';
-    s.onload = () => { if (window.EN_PACK) this.pack = window.EN_PACK; };
-    s.onerror = () => { this.loading = false; /* нет файла или сети — системный голос */ };
-    document.head.appendChild(s);
+    VoiceParts.load('en', p => { this.pack = p; if (!p) this.loading = false; });   // нет файлов или сети — системный голос
   },
   ready() { return !!this.pack; },
   stop() { if (this.cur) { try { this.cur.pause(); } catch (e) { /* */ } this.cur = null; } },

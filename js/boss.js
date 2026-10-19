@@ -4,7 +4,7 @@
    Верный ответ — питомец бросает снаряд (буква / цифра / ABC), каждый 5-й верный подряд — суперудар −2.
    Ошибка — босс бьёт кляксой, минус сердечко, и затем применяет свой приём.
    Каждый 4-й вопрос — босс со щитом (задание труднее). Победа — расколдованный босс и сундук.
-   Фразы боссов озвучены низким голосом: voice/boss.js (делает «озвучка/озвучить.py», вид 'boss').
+   Фразы боссов озвучены низким голосом: voice/boss-N.js (делает «озвучка/озвучить.py», вид 'boss').
    ============================================================ */
 
 /* Фразы боссов — без рода (боссы бывают «он» и «она»). Новая фраза → запустить озвучку. */
@@ -75,11 +75,7 @@ const BossVoice = {
   load() {
     if (this.pack || this.asked) return;
     this.asked = true;
-    const s = document.createElement('script');
-    s.src = 'voice/boss.js';
-    s.onload = () => { this.pack = window.BOSS_PACK || null; };
-    s.onerror = () => { this.asked = false; };
-    document.head.appendChild(s);
+    VoiceParts.load('boss', p => { this.pack = p; if (!p) this.asked = false; });
   },
   stop() { if (this.cur) { try { this.cur.pause(); } catch (e) { /* */ } this.cur = null; } },
   say(text) {
