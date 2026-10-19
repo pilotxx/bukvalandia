@@ -1,5 +1,5 @@
 /* Букваландия — офлайн-режим. При обновлении файлов увеличьте номер версии. */
-const CACHE = 'bukvalandia-v8';
+const CACHE = 'bukvalandia-v9';
 const FILES = [
   './', 'index.html', 'manifest.webmanifest', 'css/style.css',
   'js/engine.js', 'js/data.js', 'js/math.js', 'js/english.js', 'js/subjects.js', 'js/rewards.js', 'js/pet.js', 'js/sound.js', 'js/room.js', 'js/games.js', 'js/rufun.js', 'js/mathfun.js', 'js/boss.js', 'js/app.js',
