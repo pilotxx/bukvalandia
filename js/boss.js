@@ -121,7 +121,30 @@ const Boss = {
   start() {
     BossVoice.load();
     Object.assign(L, { helped: false, trickNext: false, bState: '', biteLeft: 0, blotTold: false, lastCrit: false });
-    setTimeout(() => { if (L && L.mode === 'boss') Boss.bossSay(U.rnd(BOSS_LINES.start)); }, 500);
+    this.later(() => Boss.bossSay(U.rnd(BOSS_LINES.start)), 500);
+  },
+
+  /* Каждый отложенный эффект принадлежит ровно одному бою. */
+  isCurrent(session, allowFinished = false) {
+    return !!session && L === session && session.mode === 'boss' && (allowFinished || !session.finished);
+  },
+  later(fn, delay, session = L, allowFinished = false) {
+    if (!session) return null;
+    session.bossTimers = session.bossTimers || new Set();
+    const timer = setTimeout(() => {
+      session.bossTimers.delete(timer);
+      if (this.isCurrent(session, allowFinished)) fn();
+    }, delay);
+    session.bossTimers.add(timer);
+    return timer;
+  },
+  cancel(session) {
+    if (!session) return;
+    session.bossTimers?.forEach(timer => clearTimeout(timer));
+    session.bossTimers?.clear();
+    session.bossAnimations?.forEach(animation => animation.cancel());
+    session.bossAnimations?.clear();
+    clearTimeout(this.bT); clearTimeout(this.pT);
   },
 
   /* ---------- Мелочи ---------- */
@@ -156,6 +179,7 @@ const Boss = {
   },
   /* Полёт снаряда по дуге от одного элемента к другому */
   fly(html, from, to, cls = '', dur = 520, arc = -80) {
+    const session = L;
     const [x0, y0] = this.center(from, 0.4), [x1, y1] = this.center(to, 0.5);
     const el = this.fxEl('shot ' + cls, `left:${x0}px;top:${y0}px`, html);
     if (!el) return Promise.resolve();
@@ -168,7 +192,10 @@ const Boss = {
         { transform: `translate(calc(-50% + ${dx / 2}px), calc(-50% + ${dy / 2 + arc}px)) scale(1.15) rotate(200deg)`, offset: 0.5 },
         { transform: `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) scale(.9) rotate(400deg)` },
       ], { duration: dur, easing: 'ease-in' });
-      a.onfinish = end;
+      session.bossAnimations = session.bossAnimations || new Set();
+      session.bossAnimations.add(a);
+      const finish = () => { session.bossAnimations.delete(a); end(); };
+      a.onfinish = finish; a.oncancel = finish;
     });
   },
   /* Чем бросает питомец: русский — буква из ответа, математика — цифра, английский — ABC */
@@ -220,11 +247,12 @@ const Boss = {
     }
     this.setPet('happy');
     if (L.biteLeft > 0 && --L.biteLeft === 0) this.unbite();
-    if (L.hearts === 1 && !L.helped) setTimeout(() => this.help(), 700);
-    else if (L.trickNext || (L.pos % 5 === 2)) { L.trickNext = false; setTimeout(() => this.trick(), e.shield ? 1600 : 800); }
+    if (L.hearts === 1 && !L.helped) this.later(() => this.help(), 700);
+    else if (L.trickNext || (L.pos % 5 === 2)) { L.trickNext = false; const session = L; this.later(() => { if (session.queue[session.pos] === e && !session.answered) this.trick(); }, e.shield ? 1600 : 800, session); }
   },
   correct(e, t) {
-    const crit = L.combo > 0 && L.combo % 5 === 0, dmg = (crit ? 2 : 1) + (L.chargedStrike ? 1 : 0);
+    const session = L;
+    const crit = L.combo > 0 && L.combo % 5 === 0, dmg = t.battleFinal ? L.hp : (crit ? 2 : 1) + (L.chargedStrike ? 1 : 0);
     L.chargedStrike = false;
     L.lastCrit = crit;
     L.hp = Math.max(0, L.hp - dmg);
@@ -235,7 +263,7 @@ const Boss = {
     if (crit) this.petSay('Суперудар!');
     const g = this.ammo(t);
     this.fly(crit ? `${g}<b>💥</b>` : g, pet, boss, crit ? 'crit' : '', crit ? 600 : 520, crit ? -120 : -80)
-      .then(() => this.impact(dmg, crit, !!e.shield));
+      .then(() => { if (this.isCurrent(session)) this.impact(dmg, crit, !!e.shield); });
   },
   impact(dmg, crit, shield) {
     if (!L || L.mode !== 'boss') return;
@@ -274,6 +302,7 @@ const Boss = {
     this.tones([[1400, 0, 0.08], [1000, 0.05, 0.1], [1700, 0.1, 0.15]], 'square', 0.05);
   },
   wrong() {
+    const session = L;
     L.hearts = Math.max(0, L.hearts - 1);
     L.trickNext = L.hearts > 0;
     this.clearFx();
@@ -281,7 +310,7 @@ const Boss = {
     this.re(ab, 'laughing');
     this.bossSay(U.rnd(L.hearts ? BOSS_LINES.laugh : BOSS_LINES.win));
     this.fly('<i class="inkb"></i>', boss, pet, 'ink', 560, -40).then(() => {
-      if (!L || L.mode !== 'boss') return;
+      if (!this.isCurrent(session)) return;
       this.re(pet, 'ouch');
       this.fxEl('splat', (([x, y]) => `left:${x}px;top:${y}px`)(this.center(pet, 0.45)), '', 1500);
       this.setPet('sad');
@@ -293,11 +322,12 @@ const Boss = {
   /* Помощь питомца: при одном сердечке — один раз за бой +1 */
   help() {
     if (!L || L.mode !== 'boss' || L.helped || L.hearts !== 1) return;
+    const session = L;
     L.helped = true;
     this.setPet('love');
     this.petSay('Держись, я помогу!');
     this.fly('❤️', $('#aPet'), $('#hearts'), 'heartshot', 750, -90).then(() => {
-      if (!L || L.mode !== 'boss') return;
+      if (!this.isCurrent(session)) return;
       L.hearts++; this.hearts(); this.re($('#hearts'), 'bump');
       Sound.play('pet');
     });
@@ -324,7 +354,7 @@ const Boss = {
       if ($('#aFx .bite')) return;
       this.fxEl('bite ' + U.rnd(['left', 'right']));
       L.biteLeft = 2;
-      [0, 0.15, 0.3].forEach(s => setTimeout(() => this.noise(0.08, 900, 0.14, 'lowpass'), s * 1000));
+      [0, 0.15, 0.3].forEach(s => this.later(() => this.noise(0.08, 900, 0.14, 'lowpass'), s * 1000));
     },
     hiss() {
       const r = this.bodyRect();
@@ -342,9 +372,9 @@ const Boss = {
       const g = Array.from(fx.g || '🪨');
       for (let i = 0; i < 7; i++) {
         this.fxEl('rock', `left:${8 + Math.random() * 84}%;animation-delay:${i * 0.13}s;font-size:${30 + Math.random() * 22}px;--r:${Math.random() * 360}deg`, U.rnd(g), 2300);
-        setTimeout(() => Sound.tone(110 + Math.random() * 60, 0, 0.12, 'sine', 0.15), 700 + i * 130);
+        this.later(() => Sound.tone(110 + Math.random() * 60, 0, 0.12, 'sine', 0.15), 700 + i * 130);
       }
-      if (stomp) [0, 450, 900].forEach(d => setTimeout(() => { this.re(this.ov(), 'quake'); Sound.tone(70, 0, 0.25, 'sine', 0.25); }, d));
+      if (stomp) [0, 450, 900].forEach(d => this.later(() => { this.re(this.ov(), 'quake'); Sound.tone(70, 0, 0.25, 'sine', 0.25); }, d));
     },
     stomp(fx) { this.T.rocks.call(this, fx, true); },
     sparks() {
@@ -360,7 +390,7 @@ const Boss = {
       const opts = box ? $$('.opt', box).filter(b => !b.disabled) : [];
       if (opts.length < 2) { this.T.waves.call(this); return; }
       this.re(box, 'swirl');
-      setTimeout(() => { if (L && !L.answered) U.shuffle([...box.children]).forEach(c => box.appendChild(c)); }, 320);
+      this.later(() => { if (L && !L.answered) U.shuffle([...box.children]).forEach(c => box.appendChild(c)); }, 320);
       this.tones([[500, 0, 0.08], [700, 0.08, 0.08], [400, 0.16, 0.08], [800, 0.24, 0.12]], 'triangle', 0.08);
     },
     ghost() {
@@ -406,9 +436,9 @@ const Boss = {
       };
       cv.addEventListener('pointerdown', rub);
       cv.addEventListener('pointermove', ev => { if (ev.buttons || ev.pointerType === 'touch') rub(ev); });
-      setTimeout(finish, 25000);
+      this.later(finish, 25000);
       this.noise(0.2, 500, 0.15, 'lowpass');
-      if (!L.blotTold) { L.blotTold = true; setTimeout(() => this.petSay('Сотри кляксу пальцем!'), 1200); }
+      if (!L.blotTold) { L.blotTold = true; this.later(() => this.petSay('Сотри кляксу пальцем!'), 1200); }
     },
   },
   ink(c, w, h) {
@@ -422,7 +452,7 @@ const Boss = {
   defeat(cb) {
     L.defeating = true;
     const ab = $('#aBoss'), b = $('#bEmo');
-    setTimeout(() => {
+    this.later(() => {
       if (!L) return;
       this.bossSay(U.rnd(BOSS_LINES.down));
       ab.classList.remove('angry', 'scared', 'shielded');
@@ -430,7 +460,7 @@ const Boss = {
       b.classList.remove('hit'); b.classList.add('spin');
       this.tones([[600, 0, 0.15], [500, 0.15, 0.15], [400, 0.3, 0.15], [300, 0.45, 0.3]], 'triangle', 0.1);
     }, 650);
-    setTimeout(() => {
+    this.later(() => {
       if (!L) return;
       const [x, y] = this.center(b);
       Sound.play('pop'); this.noise(0.3, 1500, 0.15);
@@ -444,8 +474,8 @@ const Boss = {
       confetti(110); Sound.play('level');
       this.setPet('laugh');
     }, 1850);
-    setTimeout(() => { if (L) this.bossSay(U.rnd(BOSS_LINES.free)); }, 2500);
-    setTimeout(() => { if (L && !L.finished) cb(); }, 4600);
+    this.later(() => { if (L) this.bossSay(U.rnd(BOSS_LINES.free)); }, 2500);
+    this.later(() => { if (L && !L.finished) cb(); }, 4600);
   },
   /* Сундук: монеты или редкий предмет. Первая победа — щедрее, и из сундука может выпасть редкий подарок */
   chestPrize(first, wi) {
@@ -470,10 +500,10 @@ const Boss = {
     if (!c || c.classList.contains('open') || !L || !L.chest) return;
     c.classList.add('open');
     $('#chPrize').textContent = L.chest.icon;
-    Sound.play('coin'); setTimeout(() => Sound.play('star'), 250);
+    Sound.play('coin'); this.later(() => Sound.play('star'), 250, L, true);
     const tip = $('.chest-tip'); if (tip) tip.remove();
     const after = $('.after-chest');
-    if (after) { after.hidden = false; setTimeout(() => { const b = after.querySelector('.btn'); if (b) b.scrollIntoView({ behavior: 'smooth', block: 'end' }); }, 700); }
+    if (after) { after.hidden = false; this.later(() => { const b = after.querySelector('.btn'); if (b && b.isConnected) b.scrollIntoView({ behavior: 'smooth', block: 'end' }); }, 700, L, true); }
     confetti(60);
   },
 };

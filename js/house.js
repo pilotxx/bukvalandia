@@ -6,15 +6,15 @@ const HOUSE_ROOMS = [
   { id: 'observatory', name: 'Обсерватория', icon: '🌌', at: 3, note: 'Звёзды, музыка и удивительные истории' },
 ];
 const HOUSE_STATIONS = [
-  { id: 'blocks', name: 'Конструктор', icon: '🧱', at: 1, room: 'workshop', desc: 'Строй замки и узоры. Сохрани свою постройку.', play: 'build' },
-  { id: 'art', name: 'Студия красок', icon: '🎨', at: 2, room: 'workshop', desc: 'Рисуй пальцем. После 5 побед откроется зеркальное рисование.', play: 'paint' },
+  { id: 'blocks', name: 'Мастерская мостов', icon: '🧱', at: 1, room: 'workshop', desc: 'Поверни дорожки и проведи питомца к сундуку.', play: 'build' },
+  { id: 'art', name: 'Лаборатория фигур', icon: '🎨', at: 2, room: 'workshop', desc: 'Собери силуэт из деталей. Детали можно поворачивать.', play: 'paint' },
   { id: 'stars', name: 'Звёздные маршруты', icon: '🔭', at: 3, room: 'observatory', desc: 'Соединяй звёзды по числовой закономерности.', play: 'look' },
   { id: 'music', name: 'Музыкальная шкатулка', icon: '🎹', at: 4, room: 'observatory', desc: 'Сочиняй мелодии и повторяй музыку питомца.', play: 'music' },
   { id: 'aquarium', name: 'Подводный сад', icon: '🐠', at: 6, room: 'living', desc: 'Заселяй аквариум, меняй пейзаж и корми рыбок.', play: 'look' },
   { id: 'theatre', name: 'Театр историй', icon: '🎭', at: 8, room: 'observatory', desc: 'Собери историю и посмотри спектакль с питомцем.', play: 'wow' },
 ];
 const HOUSE_UPGRADES = [
-  {id:'mirror',icon:'🪞',name:'Зеркальное рисование',at:5},
+  {id:'mirror',icon:'🪞',name:'Отражение фигур',at:5},
   {id:'reef',icon:'🐙',name:'Новые жители аквариума',at:12},
   {id:'reverseStars',icon:'🌠',name:'Обратные звёздные маршруты',at:18},
   {id:'festival',icon:'🎆',name:'Домашний фестиваль',at:25},
@@ -87,7 +87,7 @@ const House = {
     const s = HOUSE_STATIONS.find(x=>x.id===id); if (!s) return;
     if (!House.unlocked(s)) return House.unlocks();
     if (petStage()===0) return toast('Получи первую звезду — питомец вылупится и будет играть с тобой!');
-    const m=modal({cls:'sheet house-activity',html:`<div class="activity-heading"><span>${s.icon}</span><div><small>ИГРАЕМ ВМЕСТЕ</small><h2>${s.name}</h2></div></div><p>${s.desc}</p><div id="houseActivity"></div>`,buttons:[{label:'В комнату',cls:'primary'}],onClose:()=>{save();if(TAB==='pet')render();}});
+    const m=modal({cls:'sheet house-activity',html:`<div class="activity-heading"><span>${s.icon}</span><div><small>ИГРАЕМ ВМЕСТЕ</small><h2>${s.name}</h2></div></div><div id="houseActivity"></div>`,buttons:[{label:'В комнату',cls:'primary'}],onClose:()=>{m.querySelector('#houseActivity')?._cleanup?.();save();if(TAB==='pet')render();}});
     HouseActivities[id](m.querySelector('#houseActivity'));
   },
   remember(id, name, icon) {
