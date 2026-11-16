@@ -224,7 +224,8 @@ const Boss = {
     else if (L.trickNext || (L.pos % 5 === 2)) { L.trickNext = false; setTimeout(() => this.trick(), e.shield ? 1600 : 800); }
   },
   correct(e, t) {
-    const crit = L.combo > 0 && L.combo % 5 === 0, dmg = crit ? 2 : 1;
+    const crit = L.combo > 0 && L.combo % 5 === 0, dmg = (crit ? 2 : 1) + (L.chargedStrike ? 1 : 0);
+    L.chargedStrike = false;
     L.lastCrit = crit;
     L.hp = Math.max(0, L.hp - dmg);
     this.clearFx();
@@ -243,7 +244,7 @@ const Boss = {
     Sound.play('hit');
     if (crit) { this.re(this.ov(), 'quake'); this.tones([[200, 0, 0.2], [120, 0.08, 0.3]], 'sawtooth', 0.1); }
     if (shield) this.breakShield();
-    this.float(crit ? 'КРИТ! −2' : '−1', b, crit ? 'crit' : '');
+    this.float((crit ? 'КРИТ! ' : '') + '−' + dmg, b, crit ? 'crit' : '');
     const [x, y] = this.center(b);
     for (let i = 0; i < (crit ? 9 : 5); i++) {
       const a = Math.random() * 6.28, r = 50 + Math.random() * 40;

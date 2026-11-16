@@ -4,7 +4,7 @@
    ============================================================ */
 
 const KEY = 'bukvalandia_v1';   // ключ хранилища не меняем: в нём прогресс ребёнка
-const VERSION = 5;
+const VERSION = 6;
 const LESSON_LEN = 10;
 let S = null;               // состояние
 let TAB = 'map';
@@ -28,6 +28,8 @@ function defaults() {
     history: {}, streak: { last: '', count: 0, best: 0 }, bestCombo: 0,
     pet: { species: 'dragon', name: '', color: null, hat: null, glasses: null, neck: null, body: null, feet: null, back: null, costume: null, satiety: 70, tick: Date.now(), stageSeen: 0, maxStage: 0, microSeen: 0 },
     owned: { th_sky: true, ball: true }, food: {}, hidden: {},
+    house: { room: 'living', placements: {}, positions: {}, quests: {}, album: {}, skills: {}, building: [], painting: [], melody: [], aquarium: {fish:['🐠','🐟'],water:0} },
+    payments: [],
     room: { pos: {} }, costumes: {}, memoSeen: {}, riddle: { day: '', n: 0 }, greetDay: '',
     piggy: { goal: null, saved: 0 },
     gameProg: {},
@@ -54,7 +56,13 @@ function merge(d, o) {
 function load() {
   try {
     const raw = localStorage.getItem(KEY);
-    S = raw ? merge(defaults(), JSON.parse(raw)) : defaults();
+    if (raw) {
+      const previous = JSON.parse(raw);
+      if ((previous.v || 1) < 6) {
+        try { if (!localStorage.getItem(KEY + '_before_v6')) localStorage.setItem(KEY + '_before_v6', raw); } catch (e) { /* Основной прогресс остаётся на прежнем месте. */ }
+      }
+      S = merge(defaults(), previous);
+    } else S = defaults();
   } catch (e) { S = defaults(); }
   migrate();
 }
@@ -84,6 +92,7 @@ function migrate() {
     ALL_WORLDS.forEach(w => { if (S.bosses[w.id]) S.owned['boss_' + w.boss.id] = true; });
   }
   S.v = VERSION;
+  House.migrate();
 }
 let RESETTING = false;      // идёт сброс прогресса — больше ничего не сохранять (иначе автосохранение вернёт старое)
 function save() {
@@ -587,7 +596,8 @@ function openBossSheet(wid) {
   modal({
     cls: 'sheet',
     html: `<div class="boss-intro"><div class="boss-face">${w.boss.emoji}</div><h2>${w.boss.name}</h2><p>${w.boss.story}</p>
-      <div class="goals"><span>❤️ У тебя 3 жизни</span><span>💥 Здоровье босса: ${w.boss.hp}</span><span>🚫 Без подсказок</span></div>
+      <div class="goals"><span>❤️ У тебя 3 жизни</span><span>💥 Здоровье босса: ${w.boss.hp}</span><span>🐾 Помощь напарника</span></div>
+      ${Battle.intro(w)}
       ${!ready ? `<div class="need"><b>Чтобы сразиться, получи по 2 звезды в темах:</b>${need.map(l => `<div>${l.icon} ${l.title} — ${'★'.repeat(S.stars[l.id] || 0)}${'☆'.repeat(2 - Math.min(2, S.stars[l.id] || 0))}</div>`).join('')}</div>` : ''}
       ${won ? `<p class="note">Этот босс уже побеждён. Можно сразиться снова ради тренировки — монет будет ${Math.round(br.f * 100)}%.</p>` : `<p class="reward">Награда: ${150 + 60 * wi} <i class="ci"></i>${w.subject.worlds[wi + 1] ? ' и новый мир!' : ''}</p>`}</div>`,
     buttons: ready ? [{ label: 'Не сейчас', cls: 'ghost' }, { label: 'В бой! ⚔️', cls: 'primary big', onClick: () => startSession('boss', wid) }] : [{ label: 'Понятно', cls: 'primary' }],
@@ -679,6 +689,13 @@ function startSession(mode, ref) {
     queue = list.map(m => ({ t: makeTask(m.l, m.i), fix: true })).filter(x => x.t);
     if (!queue.length) return;
   }
+  if (mode === 'quest') {
+    const quest = QUESTS.find(q => q.id === ref);
+    if (!quest) return;
+    subject = SUBJ[quest.subject];
+    queue = Quest.tasks(ref);
+    factor = rewardInfo('quest:' + ref, 2).f;
+  }
   if (mode === 'mul') {
     subject = SUBJ.math;
     queue = mulTasks(12);
@@ -701,7 +718,7 @@ function startSession(mode, ref) {
       ${mode === 'boss' ? Boss.topHTML(world) : `<div class="l-progress"><div id="lProg"></div></div>`}
       <div class="combo" id="combo"></div></div>
     ${mode === 'lesson' ? RuFun.blotHTML(world) : ''}${mode === 'boss' ? Boss.arenaHTML(world) : ''}
-    <div class="l-title">${mode === 'lesson' ? LESSONS[ref].icon + ' ' + LESSONS[ref].title : mode === 'boss' ? '⚔️ Бой: ' + world.boss.name : mode === 'mul' ? '✖️ Тренажёр таблицы умножения' : '🩹 Работа над ошибками'}${L.factor < 1 ? ` <span class="fresh-tag">монеты ${Math.round(L.factor * 100)}%</span>` : ''}</div>
+    <div class="l-title">${mode === 'lesson' ? LESSONS[ref].icon + ' ' + LESSONS[ref].title : mode === 'boss' ? '⚔️ Бой: ' + world.boss.name : mode === 'mul' ? '✖️ Тренажёр таблицы умножения' : mode === 'quest' ? QUESTS.find(q => q.id === ref).icon + ' ' + QUESTS.find(q => q.id === ref).title : '🩹 Работа над ошибками'}${L.factor < 1 ? ` <span class="fresh-tag">монеты ${Math.round(L.factor * 100)}%</span>` : ''}</div>
     <div class="l-body" id="lBody"></div>
     <div class="l-foot" id="lFoot"></div>
     ${mode === 'boss' ? Boss.petHTML() : ''}
@@ -746,7 +763,7 @@ function showTask() {
   else if (t.kind === 'input') show = `<div class="mshow">${t.show.replace('[?]', '<span class="inbox" id="inbox"></span>')}</div>`;
   else if (t.show) show = `<div class="${t.small ? 'sentence' : t.show.startsWith('<div') || t.show.startsWith('<svg') ? 'mshow' : 'word'}">${t.show}</div>`;
   /* картинка и кнопки «послушать» (английский) */
-  const canSay = !!t.say && Speech.enOk();
+  const canSay = !!t.say && Speech.canSayEn(t.say);
   if (t.pic || canSay) {
     show = `<div class="en-show">${t.pic ? `<div class="pic">${t.pic}</div>` : ''}${show}
       ${canSay ? '<div class="say-row"><button class="big-say" data-act="sayEn" aria-label="Послушать">🔊</button><button class="slow-say" data-act="sayEnSlow" aria-label="Медленно">🐢</button></div>' : ''}</div>`;
@@ -769,13 +786,15 @@ function showTask() {
     ans = `<div class="ord-line ${t.join === '' ? 'letters' : ''}" id="ordLine"><span class="ph">${t.join === '' ? 'Нажимай на буквы по порядку' : 'Нажимай на слова по порядку'}</span></div>
       <div class="ord-pool ${t.join === '' ? 'letters' : ''}" id="ordPool">${t.pieces.map((p, i) => `<button class="piece" data-act="ordAdd" data-arg="${i}">${U.esc(p)}</button>`).join('')}</div>`;
   }
-  if (t.kind === 'mf') ans = MathFun.html(t);
+  if (t.kind === 'multi') ans = Quest.multiHTML(t);
+  else if (t.kind === 'mf') ans = MathFun.html(t);
   else if (t.ui) ans = RuFun.html(t);
   body.innerHTML = `${e.retry ? '<div class="retry-tag">🔁 Исправь ошибку</div>' : e.fromMistake || e.fix ? '<div class="retry-tag fix">🩹 Повторение</div>' : ''}
     <div class="prompt"><span>${t.prompt}</span>${Speech.available() && S.settings.tts ? `<button class="say" data-act="say" aria-label="Прочитать вслух">🔊</button>` : ''}</div>
     ${show}<div class="ans">${ans}</div><div class="hintbox" id="hintbox"></div>`;
   body.scrollTop = 0;
-  if (t.kind === 'mf') MathFun.bind(t, body);
+  if (t.kind === 'multi') Quest.multiBind(t, body);
+  else if (t.kind === 'mf') MathFun.bind(t, body);
   else if (t.ui) RuFun.bind(t, body);
   body.classList.remove('enter'); void body.offsetWidth; body.classList.add('enter');
   if (canSay && t.auto) setTimeout(() => { if (L && L.queue[L.pos] === e && !L.answered) Speech.sayEn(t.say); }, 450);
@@ -805,6 +824,7 @@ function useHint() {
   if (!L || L.answered || L.hint) return;
   const e = curTask(), t = e.t;
   L.hint = true; L.hints++;
+  if (L.mode === 'boss') Battle.hintUsed();
   Sound.play('tap');
   if (t.kind === 'choice' && t.options.length >= 3) {
     const wrong = $$('#lBody .opt').filter(b => b.dataset.arg !== String(t.answer) && !b.disabled);
@@ -844,7 +864,7 @@ function answer(val) {
   if (!L || L.answered) return;
   const e = curTask(), t = e.t;
   let ok;
-  if (t.kind === 'choice') ok = String(val) === String(t.answer);
+  if (t.kind === 'choice' || t.kind === 'multi') ok = String(val) === String(t.answer);
   else if (t.kind === 'stress' || t.kind === 'tap') ok = +val === t.answer;
   else if (t.kind === 'order') ok = t.answers.includes(L.ord.map(i => t.pieces[i]).join(t.join ?? ' '));
   else if (t.kind === 'input') ok = String(Number(val)) === String(Number(t.answer));
@@ -929,7 +949,7 @@ function answer(val) {
     if (t.lid) addMistake(t.lid, t.idx, t.label);
     if (L.mode === 'boss') Boss.wrong();
     else if (!e.retry || e.retryCount < 2) {
-      const nt = L.mode === 'mul' ? mulTask(e.mul[0], e.mul[1]) : makeTask(t.lid, t.idx);
+      const nt = L.mode === 'mul' ? mulTask(e.mul[0], e.mul[1]) : t.qid ? JSON.parse(JSON.stringify(t)) : makeTask(t.lid, t.idx);
       if (nt) L.queue.push({ t: nt, retry: true, retryCount: (e.retryCount || 0) + 1, fix: e.fix, mul: e.mul });
     }
     Sound.play('wrong');
@@ -951,6 +971,7 @@ function answer(val) {
   const after = t.sayAfter || t.say;
   if (after && Speech.enOk()) setTimeout(() => Speech.sayEn(after), ok ? 350 : 700);
   const hb = $('[data-act="hint"]'); if (hb) hb.disabled = true;
+  if (L.mode === 'boss') Battle.afterAnswer();
   save();
 }
 function renderCombo() {
@@ -1009,6 +1030,7 @@ function commonFinish() {
 function petBonusMul() { return S.pet.satiety >= 50 && petStage() > 0 ? 1.1 : 1; }
 
 function finishLesson() {
+  if (L.mode === 'quest') return Quest.finish();
   const stageBefore = petStage();
   commonFinish();
   let html;
@@ -1078,6 +1100,7 @@ function finishBoss(win) {
   const stageBefore = petStage();
   commonFinish();
   const w = L.world, wi = w.wi, first = !S.bosses[w.id];
+  const homeBefore = House.count();
   if (!first) markPlayed('boss_' + w.id);
   let html;
   if (win) {
@@ -1088,7 +1111,7 @@ function finishBoss(win) {
     const toy = 'boss_' + w.boss.id, newToy = !S.owned[toy];
     S.owned[toy] = true;
     L.chest = Boss.chestPrize(first, wi);
-    if (first) { S.bosses[w.id] = true; weekly('star', 3); autoBackup(); }
+    if (first) { S.bosses[w.id] = true; House.migrate(); weekly('star', 3); autoBackup(); }
     addXP(L.xp + (first ? 200 : 20));
     const nextW = w.subject.worlds[wi + 1];
     const saved = { math: 'Числоград спасён', en: 'Остров Hello спасён', ru: 'Букваландия спасена' }[w.subject.id];
@@ -1096,11 +1119,12 @@ function finishBoss(win) {
       ${Boss.chestHTML()}<p class="chest-tip">Нажми на сундук!</p>
       <div class="after-chest" hidden>
       <div class="prize-card">${L.chest.html}</div>
+      ${House.unlockNames(homeBefore).map(name => `<div class="prize-card house-new">🔑 Открыто в доме: <b>${name}</b></div>`).join('')}
       ${newToy ? `<div class="prize-card toy">${w.boss.emoji} В домике новая игрушка: <b>${w.boss.name}</b>. Её можно обнять!</div>` : ''}
       <div class="res-coins">+${got} <i class="ci"></i> <span>+${L.xp + (first ? 200 : 20)} опыта</span></div>
       ${first && nextW ? `<div class="unlock-card" style="--c1:${nextW.c1};--c2:${nextW.c2}">${nextW.emoji} Открыт новый мир: <b>${nextW.name}</b></div>` : ''}
       ${first && !nextW ? `<div class="unlock-card">👑 ${saved}! Это настоящий подвиг!</div>` : ''}
-      <button class="btn primary big" data-act="resClose">На карту</button></div></div>`;
+      <div class="res-btns"><button class="btn" data-act="resClose">На карту</button><button class="btn primary big" data-act="questHome">🏠 В домик</button></div></div></div>`;
   } else {
     const got = earnCoins(L.coins * L.petMul);
     addXP(L.xp);
@@ -1193,7 +1217,9 @@ function renderPet() {
   const rd = riddlesLeft();
   const cos = activeCostume();
   return `<div class="pet-screen">
+    ${House.header()}
     ${Room.html()}
+    ${House.footer()}
     ${(S.counters.play || 0) < 15 && stg > 0 ? `<p class="room-hint">👆 Нажми на питомца или на подарок. Подарки можно двигать пальцем${S.owned.ball ? ', а мяч — бросить' : ''}!</p>` : ''}
     <div class="card pet-card">
       <div class="pc-head"><h2>${name}</h2><span class="stage-tag">${PET_STAGES[stg].name}</span></div>
@@ -1271,13 +1297,13 @@ function openWardrobe() {
     const have = c.items.filter(id => S.owned[id]).length;
     return `<button class="wd-it cos ${have === c.items.length ? 'full' : ''} ${S.pet.costume === c.id ? 'on' : ''}" data-cos="${c.id}">${c.icon}<small>${c.name}<br>${have} из ${c.items.length}</small></button>`;
   }).join('')}</div></div>` + (() => {
-    const dec = [...SHOP, ...EXCLUSIVE, ...BOSS_TOYS].filter(i => i.cat === 'decor' && S.owned[i.id]);
+    const dec = House.allDecor();
     return dec.length ? `<div class="wd-sec"><b>Домик (показать / спрятать)</b><div class="wd-row">${dec.map(i => `<button class="wd-it ${S.hidden[i.id] ? '' : 'on'}" data-dec="${i.id}">${i.icon}<small>${i.name}</small></button>`).join('')}</div>
       <button class="link" data-roomreset="1">Расставить подарки как было</button></div>` : '';
   })();
   const m = modal({ cls: 'sheet', html: `<h2>Гардероб</h2><div class="wd-pet">${petSVG({ uid: 'wd' })}</div><div id="wdBody">${build()}</div>`, buttons: [{ label: 'Готово', cls: 'primary' }] });
   m.addEventListener('click', ev => {
-    if (ev.target.closest('[data-roomreset]')) { S.room.pos = {}; save(); render(); toast('🏠 Подарки на своих местах'); return; }
+    if (ev.target.closest('[data-roomreset]')) { Object.keys(House.positions()).forEach(k => delete House.positions()[k]); save(); render(); toast('🏠 Подарки на своих местах'); return; }
     const b = ev.target.closest('[data-wd],[data-dec],[data-cos]');
     if (!b) return;
     Sound.play('tap');
@@ -1344,6 +1370,7 @@ function buy(id) {
   if (!i || i.lvl > lvl()) return;
   if (S.coins < i.price) { Sound.play('wrong'); toast(`Не хватает ${fmt(i.price - S.coins)} <i class="ci"></i>. Пройди ещё урок или копи в 🐷 копилке!`); return; }
   confirmBox(`<div class="m-icon">${i.icon}</div><h2>${i.name}</h2><p>Купить за <b>${fmt(i.price)} <i class="ci"></i></b>?</p>`, 'Купить', () => {
+    if (S.coins < i.price || (i.cat !== 'food' && S.owned[i.id])) return;
     S.coins -= i.price;
     grant(i);
     Sound.play('buy');
@@ -1409,9 +1436,10 @@ function renderPiggy() {
     : g && S.coins > 0 ? '<button class="btn" data-act="piggyPut">➕ Положить из кошелька</button>' : ''}</div></div>
     <h3 class="sub">🎁 Призы от взрослых</h3>
     <div class="prizes">${S.parent.prizes.length ? S.parent.prizes.map(p => `<div class="card prize ${isGoal('prize', p.id) ? 'goal' : ''}"><span class="p-ic">🎁</span><div class="p-mid"><b>${U.esc(p.name)}</b><small>${fmt(p.price)} <i class="ci"></i></small></div>
-      ${isGoal('prize', p.id) ? '<span class="eq">⭐ Цель</span>' : `<button class="btn sm" data-act="piggySet" data-arg="prize:${p.id}">🐷 Копить</button>`}</div>`).join('') : '<p class="small">Взрослые ещё не добавили призы.</p>'}</div>
+      ${Economy.prizeButton(p)}${isGoal('prize', p.id) ? '<span class="eq">⭐ Цель</span>' : `<button class="btn sm" data-act="piggySet" data-arg="prize:${p.id}">🐷 Копить</button>`}</div>`).join('') : '<p class="small">Взрослые ещё не добавили призы.</p>'}</div>
     ${shopGoals.length ? `<h3 class="sub">🛍️ Или дорогой подарок из магазина</h3><div class="prizes">${shopGoals.map(i => `<div class="card prize ${isGoal('item', i.id) ? 'goal' : ''}"><span class="p-ic">${i.icon}</span><div class="p-mid"><b>${i.name}</b><small>${fmt(i.price)} <i class="ci"></i></small></div>
       ${isGoal('item', i.id) ? '<span class="eq">⭐ Цель</span>' : `<button class="btn sm" data-act="piggySet" data-arg="item:${i.id}">🐷 Копить</button>`}</div>`).join('')}</div>` : ''}
+    <p class="balance-summary">Кошелёк: <b>${fmt(S.coins)}</b> · копилка: <b>${fmt(sv)}</b> · всего: <b>${fmt(Economy.total())}</b> монет</p>
     ${reqs.length ? `<h3 class="sub">Мои заказы</h3>${reqs.map(r => `<div class="req ${r.status}"><span>${U.esc(r.name)}</span><small>${r.status === 'wait' ? '⏳ ждёт взрослого' : r.status === 'given' ? '🎉 получено' : '↩️ отменено'}</small></div>`).join('')}` : ''}`;
 }
 function piggySet(arg) {
@@ -1441,24 +1469,9 @@ function piggyPut() {
 }
 function piggyClaim() {
   const g = piggyGoal();
-  if (!g || S.piggy.saved < g.price) return;
-  confirmBox(`<div class="m-icon">${g.icon}</div><h2>${U.esc(g.name)}</h2><p>Потратить <b>${fmt(g.price)} <i class="ci"></i></b> из копилки?${g.t === 'prize' ? ' Взрослый получит твою заявку.' : ''}</p>`, 'Да!', () => {
-    S.piggy.saved -= g.price; S.piggy.goal = null;
-    S.counters.piggy = (S.counters.piggy || 0) + 1;
-    Sound.play('buy'); confetti();
-    if (g.t === 'prize') {
-      S.parent.requests.push({ id: 'r' + Date.now(), prize: g.id, name: g.name, price: g.price, t: Date.now(), status: 'wait' });
-      toast('🎁 Заявка отправлена взрослому!');
-      if (petStage() > 0) Speech.sayPet('Ура! Мы накопили! Какие мы молодцы!', petStage());
-    } else {
-      const i = ITEMS[g.id];
-      grant(i);
-      setTimeout(() => thank(i), 300);
-    }
-    if (S.piggy.saved > 0) { S.coins += S.piggy.saved; S.piggy.saved = 0; }
-    checkAch(); save(); render();
-  });
+  if (g) Economy.confirmGift(g, 'piggy');
 }
+
 function buyGame(gid) {
   const price = gamePrice(day().games);
   const g = GAMES.find(x => x.id === gid);
@@ -1815,7 +1828,7 @@ function pSettings() {
     <label class="fld"><b>Питомец засыпает</b><small>Вечером питомец спит и просит закончить игру. Уроки остаются доступны.</small>${sel('sleepFrom', [[0, 'не засыпает'], [20, 'в 20:00'], [20.5, 'в 20:30'], [21, 'в 21:00'], [21.5, 'в 21:30'], [22, 'в 22:00']], s.sleepFrom)}</label>
     <label class="fld"><b>🐷 Копилка</b><small>Какая часть заработанных монет сама падает в копилку, когда у ребёнка есть цель.</small>${sel('piggyShare', [[25, '25%'], [50, '50% (рекомендуется)'], [75, '75%'], [100, '100% — всё в копилку']], s.piggyShare)}</label>
     ${tg('openAll', s.openAll, 'Открыть все темы', 'Можно сразу выбрать любую тему (например, для 3 класса). Боссы всё равно требуют 2 звезды в темах мира.')}
-    <div class="card"><b>🔤 Английский голос</b><p class="small">${Speech.enOk() ? `Найден: ${U.esc(Speech.enVoice.name)} (${U.esc(Speech.enVoice.lang)}). Нажмите, чтобы послушать.` : 'Английский голос не найден — задания на слух заменяются чтением. На Android: Настройки → Специальные возможности → Синтез речи → «Синтезатор речи Google» → установите английский (Великобритания).'}</p>
+    <div class="card"><b>🔤 Английский голос</b><p class="small">${Speech.enOk() ? `Найден: ${U.esc(Speech.enVoice?.name || 'Записанный английский голос')} (${U.esc(Speech.enVoice?.lang || 'en-GB')}). Нажмите, чтобы послушать.` : 'Английский голос не найден — задания на слух заменяются чтением. На Android: Настройки → Специальные возможности → Синтез речи → «Синтезатор речи Google» → установите английский (Великобритания).'}</p>
       <button class="btn" data-act="voiceTest">🔊 Проверить голос</button></div>
     <button class="btn" data-act="pinChange">🔐 Сменить PIN-код</button>
   </div>`;
@@ -1824,6 +1837,7 @@ function pBackup() {
   const last = S.lastBackup ? new Date(S.lastBackup).toLocaleString('ru-RU') : 'ещё ни разу';
   return `<div class="set">
     <div class="card"><b>Последнее сохранение:</b> ${last}<p class="small">Прогресс хранится в браузере на этом устройстве. Если очистить данные браузера или сменить устройство, прогресс пропадёт. Раз в неделю сохраняйте файл резервной копии.</p></div>
+    <button class="btn" data-act="preUpgradeSave">🗂️ Скачать копию до большого обновления</button>
     <label class="tg"><span><b>Автоматическая копия</b><small>После победы над боссом, роста питомца, испытаний недели (и если копии не было неделю) файл сам сохраняется в «Загрузки». Не чаще раза в день.</small></span><input type="checkbox" data-set="autoBackup" ${S.settings.autoBackup ? 'checked' : ''}><i></i></label>
     <button class="btn primary big" data-act="exportSave">💾 Сохранить прогресс в файл</button>
     <label class="btn big file-btn">📂 Загрузить прогресс из файла<input type="file" accept=".json,application/json" id="importFile" hidden></label>
@@ -1934,6 +1948,20 @@ function onboarding() {
    СОБЫТИЯ
    ============================================================ */
 const ACTIONS = {
+  preUpgradeSave: () => downloadPreUpgradeSave(),
+  houseRoom: a => House.switchRoom(a),
+  houseEdit: () => { House.editing = !House.editing; render(); },
+  houseInventory: () => House.inventory(),
+  houseStation: a => House.openStation(a),
+  houseUnlocks: () => House.unlocks(),
+  houseAlbum: () => House.album(),
+  houseFestival: () => House.festival(),
+  houseTrain: a => House.train(a),
+  houseQuests: () => Quest.open(),
+  questAgain: a => { Back.done(); closeLesson(); startSession('quest', a); },
+  questHome: () => { Back.done(); TAB = 'pet'; closeLesson(); },
+  prizeClaim: a => Economy.claimPrize(a),
+  battlePower: a => Battle.power(a),
   tab: a => { TAB = a; Sound.play('tap'); $('#screen').scrollTop = 0; render(); },
   lesson: a => { Sound.play('tap'); openLessonSheet(a); },
   boss: a => { Sound.play('tap'); openBossSheet(a); },
@@ -1944,7 +1972,7 @@ const ACTIONS = {
   voiceTest: () => {
     if (!Speech.enOk()) { toast('Английский голос не найден. Установите «Синтезатор речи Google» и английский язык в нём.'); return; }
     Speech.sayEn('Hello! Let\'s learn English together!');
-    toast(`🔊 Голос: ${U.esc(Speech.enVoice.name)} (${Speech.enVoice.lang})`);
+    toast(`🔊 Голос: ${U.esc(Speech.enVoice?.name || 'Записанный английский голос')} (${Speech.enVoice?.lang || 'en-GB'})`);
   },
   mulAgain: () => { Back.done(); closeLesson(); setTimeout(() => startSession('mul'), 50); },
   subject: a => { if (!SUBJ[a] || S.subject === a) return; S.subject = a; Sound.play('tap'); save(); $('#screen').scrollTop = 0; render(); },
@@ -1989,8 +2017,8 @@ const ACTIONS = {
   pTab: a => parentPanel(a),
   prizeAdd: () => { S.parent.prizes.push({ id: 'p' + Date.now(), name: 'Новый приз', price: 1000 }); save(); parentPanel('prizes'); },
   prizeDel: a => { S.parent.prizes = S.parent.prizes.filter(p => p.id !== a); save(); parentPanel('prizes'); },
-  reqGive: a => { const r = S.parent.requests.find(x => x.id === a); if (r) { r.status = 'given'; save(); parentPanel('prizes'); } },
-  reqCancel: a => { const r = S.parent.requests.find(x => x.id === a); if (r) { r.status = 'cancel'; S.coins += r.price; save(); parentPanel('prizes'); } },
+  reqGive: a => Economy.resolve(a, 'given'),
+  reqCancel: a => Economy.resolve(a, 'cancel'),
   pinChange: () => pinSetup('settings'),
   exportSave: () => exportSave(),
   resetAll: () => confirmBox('<div class="m-icon">⚠️</div><h2>Сбросить всё?</h2><p>Звёзды, монеты, питомец и покупки будут удалены. Сначала сохраните файл резервной копии!</p>', 'Сбросить', () => {

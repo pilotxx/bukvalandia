@@ -1205,3 +1205,150 @@ p { margin: 0 0 10px; }
   .mfs-dish { width: 108px; }
   .mfm-l { width: 48px; }
 }
+/* Дом приключений · версия 10. Крупные элементы для планшета. */
+.house-heading { display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 4px 0; }
+.house-heading h2 { margin:4px 0;font-size:25px; }
+.house-heading small,.activity-heading small { font-size:11px;letter-spacing:.14em;font-weight:900;color:#76649A; }
+.house-boss-count { border:0;border-radius:18px;background:#FFF0C7;color:#72531F;padding:12px 16px;font:800 16px Nunito,sans-serif;min-height:48px; }
+.house-tabs { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px; }
+.house-tabs button { min-height:58px;padding:10px 6px;border:2px solid #DDD5F3;border-radius:17px;background:#FFFFFFC9;color:#655478;font:800 15px Nunito,sans-serif; }
+.house-tabs button small { display:block; }
+.house-tabs button.on { background:#6D51CD;border-color:#6D51CD;color:white;box-shadow:0 4px 0 #4E3A99; }
+.house-tools { display:flex;flex-wrap:wrap;gap:8px;justify-content:center; }
+.house-tools .btn { min-height:48px; }
+.house-adventure { display:flex;align-items:center;gap:14px;border:0;border-radius:22px;background:linear-gradient(115deg,#534399,#8670DA);box-shadow:0 5px 0 #493A83;padding:18px 20px;text-align:left;color:white;font:inherit; }
+.house-adventure>span { font-size:34px; }
+.house-adventure>div { flex:1; }
+.house-adventure b { display:block;font-size:20px; }
+.house-adventure small { display:block;margin-top:5px;opacity:.9; }
+.house-stations { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px; }
+.house-station { display:flex;flex-direction:column;align-items:center;gap:5px;border:2px solid #E3DDF4;border-radius:20px;background:#FFF;padding:15px 8px;color:#493A6C;font:inherit; }
+.house-station>span { font-size:38px; }
+.house-station small { font-size:12px; }
+.house-station.locked { background:#F3EFF9;color:#7B708C; }
+.house-training { padding:18px;border:2px dashed #D6CAEF;border-radius:22px;background:#FFFFFF80;text-align:center; }
+.house-training>b { font-size:19px; }
+.house-training p { margin:7px 0 12px; }
+.room-workshop .wall { background:repeating-linear-gradient(90deg,transparent 0 78px,#96C6BE33 78px 80px),linear-gradient(#D8F2E6,#BEE2D7); }
+.room-workshop .floor { background:repeating-linear-gradient(0deg,#C3926F 0 38px,#AE7D5D 38px 40px); }
+.room-workshop .window { border-color:#F6E4BF; }
+.room-observatory .wall { background:radial-gradient(circle at 20% 25%,#FFFFFF 0 2px,transparent 3px),radial-gradient(circle at 72% 18%,#F3D77B 0 3px,transparent 4px),radial-gradient(circle at 80% 55%,#FFFFFF 0 2px,transparent 3px),linear-gradient(#282C5A,#61507B); }
+.room-observatory .floor { background:repeating-linear-gradient(90deg,#696686 0 78px,#5B577A 78px 80px); }
+.room-observatory .window { border-color:#ADA5D4; }
+.room.editing { outline:3px dashed #9675E5;outline-offset:-5px; }
+.room.editing .ri { outline:2px dashed #9675E5;border-radius:10px; }
+.house-unlocks { display:grid;grid-template-columns:1fr 1fr;gap:10px;text-align:left; }
+.house-unlocks>div { display:flex;align-items:center;gap:12px;padding:12px;border-radius:16px;background:#F3F0F7; }
+.house-unlocks>div.earned { background:#E6F5EC; }
+.house-unlocks>div>span { font-size:30px; }
+.house-unlocks b,.house-unlocks small { display:block; }
+.house-unlocks small { margin-top:4px;font-size:12px; }
+.house-inventory-list { text-align:left; }
+.house-inventory-item { display:flex;gap:15px;align-items:center;padding:14px 0;border-bottom:1px solid #E4DEF1; }
+.house-inventory-item>span { font-size:38px;min-width:44px; }
+.house-inventory-item>div { flex:1;min-width:0; }
+.house-inventory-item b,.house-inventory-item small { display:block; }
+.house-place-buttons { display:flex;gap:6px;flex-wrap:wrap;margin-top:8px; }
+.house-place-buttons .btn { min-height:44px; }
+.house-album { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px; }
+.house-album>div { display:flex;flex-direction:column;gap:6px;border:1px solid #E0D7F1;background:#FFFDF5;border-radius:18px;padding:15px 10px; }
+.house-album span { font-size:40px; }
+.house-album small { color:#80748E;font-size:12px; }
+.activity-heading { display:flex;gap:14px;align-items:center;text-align:left; }
+.activity-heading>span { font-size:45px; }
+.activity-heading h2 { margin:4px 0; }
+.house-activity { width:min(720px,100%); }
+.activity-palette { display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin:16px 0 8px; }
+.activity-palette button { background:var(--paint,#F4EFFA);min-width:44px;min-height:44px;border:3px solid #DBD1EA;border-radius:14px;font-size:22px; }
+.activity-palette button.chosen { outline:3px solid #7952C9;outline-offset:2px; }
+.pixel-board { --cols:10;display:grid;grid-template-columns:repeat(var(--cols),minmax(0,1fr));gap:2px;background:#D8D1E3;border:6px solid #D8D1E3;border-radius:12px;overflow:hidden;touch-action:none;margin:16px auto;max-width:560px; }
+.pixel-board button { aspect-ratio:1;border:0;min-width:0;padding:0;border-radius:2px;touch-action:none; }
+.pixel-board.building button { border-radius:4px;box-shadow:inset 0 3px 0 #FFFFFF44,inset 0 -3px 0 #00000012; }
+.mirror-switch { display:flex;align-items:center;justify-content:center;gap:8px;min-height:44px;font-weight:800; }
+.mirror-switch input { width:24px;height:24px; }
+.activity-message { min-height:46px;margin:16px 0 8px;color:#665184;font-weight:800; }
+.music-keys { display:flex;gap:5px;margin:20px 0; }
+.music-keys button { min-width:0;flex:1;height:130px;border:2px solid #BFB1DC;border-bottom:7px solid #BFB1DC;border-radius:8px 8px 15px 15px;background:linear-gradient(#FFFFFF,#EFEAF8);font:800 17px Nunito,sans-serif;color:#63527D;display:flex;align-items:flex-end;justify-content:center;padding:12px 0; }
+.music-keys button.lit,.music-keys button:active { background:#C9B3FF;border-color:#9476CA; }
+.constellation { position:relative;height:300px;background:radial-gradient(ellipse at 70% 20%,#52497D,transparent),#212A4C;border-radius:24px;margin-top:15px;overflow:hidden; }
+.constellation>svg { position:absolute;inset:0;width:100%;height:100%; }
+.constellation line { stroke:#F9DD7E;stroke-width:1; }
+.constellation button { position:absolute;transform:translate(-50%,-50%);border:2px solid #C7C9EC;border-radius:50%;background:#3E4872;color:white;min-width:48px;min-height:48px;font:900 19px Nunito,sans-serif; }
+.constellation button.found { background:#F3D77B;border-color:#FFF1B7;color:#51426E;box-shadow:0 0 22px #F3D77B77; }
+.home-aquarium { position:relative;height:280px;overflow:hidden;border:8px solid #D7C6A8;border-radius:24px;background:linear-gradient(#AFE8F5,#6BACC9);margin:16px 0; }
+.home-aquarium[data-water="1"] { background:linear-gradient(#B8ECD2,#6DB8A3); }
+.home-aquarium[data-water="2"] { background:linear-gradient(#C6BDE9,#7D8BBD); }
+.aquarium-plants { position:absolute;bottom:0;left:0;right:0;font-size:40px;word-spacing:13px; }
+.aquarium-fish button { position:absolute;background:transparent;border:0;font-size:38px;min-width:48px;min-height:48px;animation:fishfloat 5s var(--delay) infinite ease-in-out alternate; }
+.home-aquarium.feeding .aquarium-fish button { top:8%!important;transition:top 1s; }
+@keyframes fishfloat { to { transform:translateX(14px) rotate(6deg); } }
+.story-stage { display:flex;align-items:center;justify-content:center;gap:25px;padding:16px;background:#EEE9F8;border-radius:22px;border-left:16px solid #9572B0;border-right:16px solid #9572B0; }
+.story-stage>svg { width:120px;height:120px; }
+.story-stage>span { font-size:65px; }
+.story-cards { display:grid;gap:9px;margin-top:16px;text-align:left; }
+.story-cards button { min-height:58px;padding:14px;border:2px solid #E0D7EE;background:white;color:#55456C;border-radius:16px;font:800 17px Nunito,sans-serif;text-align:left; }
+.story-cards button.right { background:#DFF2E4;border-color:#80B791;color:#356447;opacity:1; }
+.training-pet { width:155px;margin:8px auto; }
+.training-pet svg { width:100%; }
+.training-signals { font-size:28px;padding:16px;background:#F3EDF9;border-radius:18px; }
+.training-key { min-width:70px;font-size:28px; }
+.quest-cards { display:grid;gap:12px; }
+.quest-card { display:flex;align-items:center;gap:16px;text-align:left;border:2px solid #E0D7EF;border-radius:20px;padding:16px;background:#FFFFFF;color:#55456C;font:inherit; }
+.quest-card>span { font-size:40px;min-width:48px; }
+.quest-card>div { min-width:0; }
+.quest-card b { display:block;font-size:19px; }
+.quest-card p { font-size:14px;margin:6px 0; }
+.quest-card small { color:#7E6C98; }
+.quest-scene { font-size:45px;text-align:center;margin-bottom:16px; }
+.multi-note { color:#76638F;text-align:center;font-size:14px; }
+.multi-options { display:grid;gap:10px;margin:14px auto;max-width:600px; }
+.multi-option { padding:16px 18px;border:2px solid #E1D8EF;border-radius:18px;background:#FFFFFF;color:#514063;font:800 20px Nunito,sans-serif;text-align:left;min-height:60px; }
+.multi-option::before { content:'□';display:inline-block;width:30px; }
+.multi-option[aria-pressed="true"] { border-color:#9774D6;background:#EEE5FF; }
+.multi-option[aria-pressed="true"]::before { content:'☑'; }
+.multi-option.right { background:#E4F3E8;border-color:#73B38A; }
+.multi-option.wrong { background:#FFE6DD;border-color:#DB9B83; }
+#multiCheck { display:block;min-width:180px;margin:12px auto; }
+.battle-intro { background:#F1EBFC;border-radius:18px;padding:15px;margin:12px 0; }
+.battle-phase { display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 14px;margin-bottom:12px;border-radius:14px;background:#EEE7FB;color:#665183;font-weight:900; }
+.battle-phase small { font-size:12px;font-weight:700;text-align:right; }
+.battle-controls { display:flex;gap:6px;align-items:center;justify-content:center;width:100%; }
+.battle-controls .btn { min-height:46px;padding:9px 12px;font-size:14px; }
+.battle-energy { white-space:nowrap;font-weight:900;color:#7F5C16;background:#FFF1C9;padding:10px 12px;border-radius:12px; }
+.boss-ov .l-foot { flex-wrap:wrap;padding-bottom:max(14px,env(safe-area-inset-bottom)); }
+.boss-ov .fx.fog { opacity:.3; }
+.boss-ov .fx.night { bottom:auto;height:140px;opacity:.35; }
+.boss-ov .l-body { padding-bottom:112px; }
+.battle-phase~.retry-tag { margin-top:8px; }
+.balance-summary { padding:14px;background:#F0EAF8;border-radius:15px;font-size:14px;text-align:center; }
+.payment-receipt { display:grid;grid-template-columns:1fr auto;gap:12px;padding:20px;background:#EEF6EF;border-radius:20px;text-align:left;margin:16px 0; }
+.prize { flex-wrap:wrap; }
+.house-new { background:#E9F4EE;border-color:#B7D8C3; }
+button:focus-visible { outline:3px solid #9164D2;outline-offset:3px; }
+@media(max-width:560px) {
+  .house-heading h2 { font-size:21px; }
+  .house-tabs button { font-size:12px; }
+  .house-stations { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .house-album { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .house-unlocks { grid-template-columns:1fr; }
+  .house-adventure { padding:15px; }
+  .house-adventure b { font-size:17px; }
+  .music-keys button { height:100px;font-size:13px; }
+  .battle-controls { flex-wrap:wrap; }
+  .battle-controls .btn { font-size:12px;padding:8px; }
+  .battle-energy { font-size:13px;padding:8px; }
+  .battle-phase { flex-direction:column;gap:3px; }
+  .multi-option { font-size:17px; }
+}
+@media(prefers-reduced-motion:reduce) {
+  *,*::before,*::after { animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important; }
+}
+
+
+.house-activity.modal { max-width:720px; }
+.quest-book.modal,.house-inventory.modal { max-width:680px; }
+
+/* Способности не перекрываются питомцем в левом нижнем углу. */
+.boss-ov .l-foot { padding-left:max(124px,calc(50% - 388px)); }
+.battle-controls { flex-wrap:wrap; }
+@media(max-width:560px) { .boss-ov .l-foot { padding-left:100px; } }
