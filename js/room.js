@@ -18,10 +18,10 @@ const Room = {
 
   /* ---------- Положение предметов ---------- */
   pos(i) {
-    const p = S.room.pos[i.id];
+    const p = House.positions()[i.id];
     return p ? { x: p[0], y: p[1] } : { x: i.x, y: i.y };
   },
-  decor() { return [...SHOP, ...EXCLUSIVE, ...BOSS_TOYS].filter(i => i.cat === 'decor' && S.owned[i.id] && !S.hidden[i.id]); },
+  decor() { return House.allDecor().filter(i => !S.hidden[i.id] && House.itemRoom(i.id) === House.room().id); },
   night() {
     const from = S.settings.sleepFrom;
     if (!from) return false;
@@ -42,7 +42,7 @@ const Room = {
 
   html() {
     const night = Room.night();
-    return `<div class="room ${night ? 'night' : ''}" id="room"><div class="room-in" id="roomIn">
+    return `<div class="room room-${House.room().id} ${House.editing ? 'editing' : ''} ${night ? 'night' : ''}" id="room"><div class="room-in" id="roomIn">
       <div class="wall"></div><div class="window"><div class="sky">${night ? '<span class="moon">🌙</span><i class="st s1"></i><i class="st s2"></i><i class="st s3"></i>' : '<span class="sun">☀️</span><span class="cloud">☁️</span>'}</div></div>
       <div class="floor"></div>
       ${Room.decor().map(Room.itemHTML).join('')}
@@ -59,7 +59,7 @@ const Room = {
     if (!Room.root) return;
     Room.busy = false; Room.hide = null;
     Room.fit();
-    const bed = ITEMS.bed && S.owned.bed && !S.hidden.bed ? Room.pos(ITEMS.bed) : null;
+    const bed = ITEMS.bed && S.owned.bed && !S.hidden.bed && House.itemRoom('bed') === House.room().id ? Room.pos(ITEMS.bed) : null;
     if (Room.night() && petStage() > 0 && bed) { Room.pet.x = bed.x; Room.pet.y = bed.y - 2; Room.pet.onTop = true; } else Room.pet.onTop = false;
     if (petStage() === 0) { Room.pet.x = 320; Room.pet.y = 352; }
     Room.place(0);
@@ -74,7 +74,7 @@ const Room = {
     clearTimeout(Room.idleT);
     window.removeEventListener('resize', Room.fit);
     Room.gen++;
-    Room.root = null;
+    Room.root = null; Room.drag = false;
   },
   alive(g) { return g === Room.gen && Room.root && document.body.contains(Room.root); },
   fit() {
@@ -220,6 +220,7 @@ const Room = {
   async playWith(id, byChild = true) {
     const i = ITEMS[id];
     if (!i || !Room.root) return;
+    if (byChild && i.station) { House.openStation(i.station); return; }
     const st = petStage();
     if (st === 0) { Room.itemFx(id, 'wiggle'); return; }
     if (Room.night()) { Room.itemFx(id, 'wiggle'); Room.say('Тсс… Сейчас ночь, игрушки тоже спят.', byChild, true); return; }
@@ -361,6 +362,7 @@ const Room = {
     const onPet = ev.target.closest('.rpet');
     const start = Room.toRoom(ev);
     if (it) { Room.startDrag(ev, it, start); return; }
+    if (House.editing) return;
     if (onPet) { Room.petTouch(ev, start); return; }
     /* пустой пол — питомец идёт туда */
     if (start.y > FLOOR_Y && !Room.busy && !Room.hide && petStage() > 0 && !Room.night()) {
@@ -374,6 +376,7 @@ const Room = {
     if (!i) return;
     ev.preventDefault();
     const p0 = Room.pos(i);
+    const positions = House.positions();
     const off = { x: p0.x - start.x, y: p0.y - start.y };
     const trail = [{ x: start.x, y: start.y, t: performance.now() }];
     let moved = false;
@@ -391,11 +394,11 @@ const Room = {
       el.removeEventListener('pointermove', move); el.removeEventListener('pointerup', up); el.removeEventListener('pointercancel', up);
       el.classList.remove('dragging');
       Room.drag = false;
-      if (!moved) { if (Room.hide) Room.seek(i.id); else Room.playWith(i.id, true); return; }
+      if (!moved) { if (House.editing) { House.inventory(i.id); return; } if (Room.hide) Room.seek(i.id); else Room.playWith(i.id, true); return; }
       const a = trail[0], b = trail[trail.length - 1], dt = Math.max(1, b.t - a.t);
       const vx = (b.x - a.x) / dt, vy = (b.y - a.y) / dt;
-      if (i.id === 'ball' && Math.hypot(vx, vy) > 0.5 && !Room.night()) { Room.throwBall(el, el._p || p0, vx, vy); return; }
-      if (el._p) { S.room.pos[i.id] = [Math.round(el._p.x), Math.round(el._p.y)]; save(); }
+      if (!House.editing && i.id === 'ball' && Math.hypot(vx, vy) > 0.5 && !Room.night()) { Room.throwBall(el, el._p || p0, vx, vy); return; }
+      if (el._p) { positions[i.id] = [Math.round(el._p.x), Math.round(el._p.y)]; save(); }
     };
     el.addEventListener('pointermove', move); el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
   },
@@ -432,7 +435,8 @@ const Room = {
     void bounces;
   },
   async fetch(el, x, y, g) {
-    S.room.pos.ball = [Math.round(x), Math.round(y)]; save();
+    if (!Room.alive(g)) return;
+    House.positions().ball = [Math.round(x), Math.round(y)]; save();
     if (Room.busy || petStage() === 0) return;
     Room.busy = true; clearTimeout(Room.idleT);
     const side = Room.pet.x < x ? -1 : 1;
@@ -444,7 +448,7 @@ const Room = {
     await wait(900); if (!Room.alive(g)) return;
     const nx = Math.max(80, Math.min(ROOM_W - 80, Room.pet.x - side * 40));
     el.style.left = nx + 'px'; el.style.top = Math.min(FOOT_MAX, y + 6) + 'px';
-    S.room.pos.ball = [Math.round(nx), Math.round(Math.min(FOOT_MAX, y + 6))]; save();
+    House.positions().ball = [Math.round(nx), Math.round(Math.min(FOOT_MAX, y + 6))]; save();
     setTimeout(() => { el.style.transition = ''; }, 500);
     S.counters.play = (S.counters.play || 0) + 1;
     await wait(600);
