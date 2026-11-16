@@ -5,10 +5,10 @@ const Battle = {
   phase: () => L.hp / L.hpMax > .67 ? 0 : L.hp / L.hpMax > .34 ? 1 : 2,
   intro(w) {
     const next=[...HOUSE_ROOMS.slice(1),...HOUSE_STATIONS,...HOUSE_UPGRADES].filter(x=>x.at>House.count()).sort((a,b)=>a.at-b.at)[0];
-    return `<div class="battle-intro"><b>Три этапа: разведка → ловушки → решающая загадка</b><p class="small">Верные ответы заряжают способности питомца. Выбирай: защититься, получить совет или усилить следующий удар.</p>${next?`<p class="small">🏠 Следующее открытие: ${next.icon} ${next.name} · ещё ${next.at-House.count()} первых побед.</p>`:'<p class="small">🏠 Все занятия дома открыты!</p>'}</div>`;
+    return `<div class="battle-intro battle-guide"><span>🎯 Ответь</span><i>→</i><span>🧩 Обойди ловушку</span><i>→</i><span>🔐 Соедини пары</span></div>${next?`<p class="small">🏠 ${next.icon} ${next.name}: ещё ${next.at-House.count()} 🏆</p>`:''}`;
   },
   footer() {
-    return `<div class="battle-controls"><span class="battle-energy">⚡ ${L.energy}/3</span><button class="btn" data-act="battlePower" data-arg="guard" ${L.energy<2||L.guard?'disabled':''}>🛡️ ${L.guard?'Щит готов':'Щит · 2⚡'}</button><button class="btn" data-act="battlePower" data-arg="hint" ${L.energy<2||L.hint?'disabled':''}>💡 Совет · 2⚡</button><button class="btn" data-act="battlePower" data-arg="strike" ${L.energy<3||L.chargedStrike?'disabled':''}>💥 ${L.chargedStrike?'Удар заряжен':'Усилить · 3⚡'}</button></div>`;
+    return `<div class="battle-controls"><span class="battle-energy">⚡ ${L.energy}/3</span><button class="btn" data-act="battlePower" data-arg="guard" ${L.energy<2||L.guard?'disabled':''}>🛡️ ${L.guard?'Щит готов':'Щит · 2⚡'}</button><button class="btn" data-act="battlePower" data-arg="hint" ${L.energy<2||L.hint?'disabled':''}>💡 Совет · 2⚡</button><button class="btn" data-act="battlePower" data-arg="strike" ${L.energy<3||L.chargedStrike||curTask().t.battleFinal?'disabled':''}>💥 ${L.chargedStrike?'Удар заряжен':'Усилить · 3⚡'}</button></div>`;
   },
   update() {
     if(!L||L.mode!=='boss'||L.finished)return;
@@ -35,7 +35,7 @@ const Battle = {
     const a=mr(3,8),b=mr(2,5),c=mr(1,4),n=w.wi;
     let t;
     if(w.subject.id==='math')t=[
-      ()=>multiTask(`Енот спрятал число <b>${a*10+b}</b>. Выбери все верные подсказки.`,[`${a} десятков и ${b} единиц`,`${a*10} + ${b}`,`${b} десятков и ${a} единиц`,`${a*10+b-1} + 1`],a===b?[0,1,2,3]:[0,1,3],{hint:'Разложи число на десятки и единицы.',explain:`${a*10+b} = ${a*10} + ${b}. На один меньше — ${a*10+b-1}.`}),
+      ()=>multiTask(`Енот спрятал число <b>${a*10+b}</b>. Выбери все верные подсказки.`,[`${a} десятков и ${b} единиц`,`${a*10} + ${b}`,`${b} десятков и ${a+1} единиц`,`${a*10+b-1} + 1`],[0,1,3],{hint:'Разложи число на десятки и единицы.',explain:`${a*10+b} = ${a*10} + ${b}. На один меньше — ${a*10+b-1}.`}),
       ()=>multiTask(`Крокодил запутал переход через десяток. Выбери все способы найти <b>8 + ${b+3}</b>.`,[`8 + 2 + ${b+1}`,`10 + ${b+1}`,`8 + 3 + ${b+1}`,`${8+b+3}`],[0,1,3],{hint:`До 10 не хватает 2. Разложи ${b+3} на 2 и ${b+1}.`,explain:`8 + ${b+3} = 10 + ${b+1} = <b>${b+11}</b>.`}),
       ()=>multiTask(`Какие записи дают <b>${a*10+8} + 7</b>? Выбери все верные.`,[`${a*10+8} + 2 + 5`,`${a*10+8} + 10 − 3`,`${a*10+8} + 3 + 5`,`${a*10+15}`],[0,1,3],{hint:'В каждом способе в итоге нужно прибавить 7.',explain:`2 + 5 = 7, 10 − 3 = 7. Ответ: <b>${a*10+15}</b>.`}),
       ()=>multiTask(`У кальмара ${b} ${U.plural(b,'корзина','корзины','корзин')}, в каждой по ${a} ракушек. Выбери все верные записи.`,[`${Array(b).fill(a).join(' + ')}`,`${a} · ${b}`,`${a} + ${b}`,`${a*b}`],[0,1,3],{hint:'Повторяется одно и то же количество ракушек.',explain:`По ${a} взяли ${b} раза: <b>${a*b}</b>.`}),
@@ -65,15 +65,65 @@ const Battle = {
       ()=>multiTask('Хомяк просит <b>fruit</b>. Выбери все фрукты.',['apple 🍎','banana 🍌','bread 🍞','orange 🍊'],[0,1,3],{hint:'Fruit — фрукты. Bread — хлеб.',explain:'Apple, banana, orange — фрукты.'}),
       ()=>orderTask('Ответь Биг-Бену: «Мы друзья»',['We','are','friends.'],{hint:'Начни с We — мы. С ним используется are.',sayAfter:'We are friends.',explain:'We are friends. — Мы друзья.'}),
     ][n]();
+    const mathGoals=[`Верни число ${a*10+b}`,`Найди все способы: 8 + ${b+3}`,`Найди все способы: ${a*10+8} + 7`,'Сколько ракушек? Выбери все записи.',`Открой замок числа ${a*b}`,'Почини меры','Выбери верные подписи','Что можно узнать?',`Собери число ${a*100+b*10+c}`];
+    const ruGoals=['Верни гласные','Найди слова: 2 слога','Выбери слова без ошибок','Проверь слово «л_сной»','Найди верные проверки','Семья слова «сад»','Найди действия','Собери предложение'];
+    const enGoals=['Расставь буквы','Найди звук [æ], как в cat','Верни животных','Choose green things','Почини фразы','Выбери верные подписи','Найди фрукты','Собери фразу'];
+    t.prompt=(w.subject.id==='math'?mathGoals:w.subject.id==='ru'?ruGoals:enGoals)[n];
+    if(w.subject.id==='math'&&n===3)t.show=`<div class="battle-picture">${'🧺'.repeat(b)}<b>по ${a} 🐚</b></div>`;
+    if(w.subject.id==='math'&&n===6)t.show=`<div class="battle-rectangle"><span>${a}</span><b>${b}</b></div>`;
+    if(w.subject.id==='math'&&n===7)t.show=`<div class="battle-picture">🍎 ${a*b} <b>− ${c}</b></div>`;
+    if(w.subject.id==='en'&&n===0){const first=mr(0,20),letters=Array.from({length:5},(_,i)=>String.fromCharCode(65+first+i));t=orderTask(t.prompt,letters,{hint:letters.join(' → '),explain:letters.join(' → ')});}
     t.label='Загадка: '+w.boss.name;t.battleChallenge=true;return t;
   },
 };
 
 const battleStart=Boss.start.bind(Boss),battlePrep=Boss.prepTask.bind(Boss),battleOnTask=Boss.onTask.bind(Boss),battleCorrect=Boss.correct.bind(Boss),battleWrong=Boss.wrong.bind(Boss);
+Battle.finalTask = function (w) {
+  const a=mr(3,8),b=mr(2,5),c=mr(1,4),n=w.wi;
+  let values;
+  if(w.subject.id==='math') {
+    const x=mr(2,5),y=mr(2,7);
+    values=[
+      [[`${a} дес. ${b} ед.`,a*10+b],[`${a+1} дес. ${b} ед.`,a*10+b+10],[`${a} дес. ${b+1} ед.`,a*10+b+1]],
+      [[`8 + ${b+3}`,b+11],[`7 + ${b+3}`,b+10],[`9 + ${b+3}`,b+12]],
+      [[`${a*10+8} + 7`,a*10+15],[`${a*10+8} + 8`,a*10+16],[`${a*10+8} − 9`,a*10-1]],
+      [[`${x} · ${y}`,x*y],[`${x} · ${y+1}`,x*(y+1)],[`${x} · ${y+2}`,x*(y+2)]],
+      [[`${a*b} : ${a}`,b],[`${a*b+a} : ${a}`,b+1],[`${a*b+2*a} : ${a}`,b+2]],
+      [[`${a} м`,`${a*100} см`],[`${b} ч`,`${b*60} мин`],[`${c} кг`,`${c*1000} г`]],
+      [[`Площадь ${a}×${b}`,`${a*b} клеток`],[`Периметр ${a}×${b}`,`${2*(a+b)} ед.`],['Площадь 9×9','81 клетка']],
+      [['На 3 больше',`${a} + 3`],['На 3 меньше',`${a} − 3`],['В 3 раза больше',`${a} · 3`]],
+      [[`${a*100} + ${b*10} + ${c}`,a*100+b*10+c],[`${a*100} + ${b*10}`,a*100+b*10],[`${a*100} + ${c}`,a*100+c]],
+    ][n];
+  } else if(w.subject.id==='ru') {
+    values=[
+      [['дом','Д'],['кот','К'],['мак','М']],
+      [['кот','1 слог'],['кошка','2 слога'],['машина','3 слога']],
+      [['ж_раф','И'],['ч_до','У'],['ч_й','А']],
+      [['л_сной','лес'],['с_ды','сад'],['в_да','во́ды']],
+      [['гри_','грибы́'],['ду_','дубы́'],['лу_','луга́']],
+      [['домик','дом'],['лесник','лес'],['рыбак','рыб']],
+      [['кот','Кто? Что?'],['прыгает','Что делает?'],['рыжий','Какой?']],
+      [['Питомец','Кто?'],['играет','Что делает?'],['с мячом.','С чем?']],
+    ][n];
+  } else {
+    values=[
+      [['a','A'],['g','G'],['r','R']],
+      [['sh','ship 🚢'],['ch','chick 🐥'],['th','three 3']],
+      [['cat','🐱'],['dog','🐶'],['rabbit','🐰']],
+      [['red','🔴'],['green','🟢'],['blue','🔵']],
+      [['mum','👩'],['dad','👨'],['grandpa','👴']],
+      [['book','📖'],['ruler','📏'],['pencil','✏️']],
+      [['apple','🍎'],['carrot','🥕'],['bread','🍞']],
+      [['I ___ nine.','am'],['He ___ got a dog.','has'],['They ___ friends.','are']],
+    ][n];
+  }
+  return {kind:'scene',sceneType:'match',answer:'ok',prompt:'Соедини пары — открой замок',pairs:values.map(([left,right],i)=>({id:String(i),left:String(left),right:String(right)})),battleChallenge:true,battleFinal:true,label:'Замок: '+w.boss.name,hint:'Нажми на карточку слева, затем на её пару справа.',explain:'Каждая верная пара открывает часть замка.'};
+};
 Boss.start=function(){battleStart();L.energy=2;L.guard=false;L.chargedStrike=false;};
 Boss.prepTask=function(){
   battlePrep();const e=curTask(),phase=Battle.phase();
-  if(phase>0&&!e.battlePrepared&&(L.pos%2===0||e.shield)){const t=Battle.challenge(L.world);L.queue[L.pos]={...e,t,battlePrepared:true};}
+  if(phase===2&&!e.t.battleFinal){L.queue[L.pos]={...e,t:Battle.finalTask(L.world),battlePrepared:true};}
+  else if(phase===1&&!e.battlePrepared&&(L.pos%2===0||e.shield)){const t=Battle.challenge(L.world);L.queue[L.pos]={...e,t,battlePrepared:true};}
 };
 Boss.onTask=function(e){
   battleOnTask(e);const phase=Battle.phase();

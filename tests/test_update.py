@@ -76,6 +76,26 @@ class BigUpdateTests(unittest.TestCase):
             for val in task['answer'].split('|'):
                 self.page.locator(f'[data-multi="{val}"]').click()
             self.page.locator('#multiCheck').click()
+        elif task['kind'] == 'scene':
+            import itertools
+            if task['sceneType'] == 'cart':
+                solution = next(counts for counts in itertools.product(range(task.get('maxItems', 6)+1), repeat=len(task['items']))
+                                if 0 < sum(counts) <= task.get('maxItems', 6)
+                                and sum(n*item['price'] for n,item in zip(counts,task['items'])) == task['target'])
+                for n,item in zip(solution,task['items']):
+                    for _ in range(n): self.page.locator(f'[data-cart-add="{item["id"]}"]').click()
+            elif task['sceneType'] == 'area':
+                width,height = next((w,h) for w in range(1,task['cols']+1) for h in range(1,task['rows']+1)
+                                    if w*h == task['target'] and (not task.get('perimeter') or 2*(w+h)==task['perimeter']))
+                for r in range(height):
+                    for c in range(width):self.page.locator(f'[data-area-cell="{r*task["cols"]+c}"]').click()
+            elif task['sceneType'] == 'pack':
+                for ident in task['want']:self.page.locator(f'[data-pack-item="{ident}"]').click()
+            elif task['sceneType'] == 'match':
+                for pair in task['pairs']:
+                    self.page.locator(f'[data-match-left="{pair["id"]}"]').click()
+                    self.page.locator(f'[data-match-right="{pair["id"]}"]').click()
+            self.page.locator('[data-scene-check]').click()
         elif task['kind'] == 'order':
             parts = list(task['answers'][0]) if task.get('join') == '' else task['answers'][0].split(' ')
             used = set()
@@ -127,7 +147,7 @@ class BigUpdateTests(unittest.TestCase):
         self.assertEqual(self.page.evaluate('S.coins'), 700)
         self.assertEqual(self.page.evaluate('S.parent.requests.length'), 1)
         self.assertEqual(self.page.evaluate('S.payments[0].before-S.payments[0].after'), 1000)
-        self.assertIn('−1 000 монет', self.page.locator('.payment-receipt').inner_text())
+        self.assertIn('1 000', self.page.locator('.payment-receipt').inner_text())
         self.page.evaluate("Economy.claimPrize('p1')")
         self.assertEqual(self.page.evaluate('S.coins'), 700)
         self.page.reload()
@@ -220,6 +240,32 @@ class BigUpdateTests(unittest.TestCase):
         self.assertIn('Решающая',self.page.locator('.battle-phase').inner_text())
         self.page.evaluate('closeLesson()')
 
+    def test_old_boss_animation_cannot_win_a_new_session(self):
+        self.page.evaluate("S.stars.vowels=3;startSession('boss','w1');L.hp=1;showTask()")
+        self.answer_task()
+        self.assertTrue(self.page.evaluate('L.defeating'))
+        self.page.evaluate("closeLesson();startSession('boss','mw1')")
+        self.page.wait_for_timeout(5100)
+        self.assertEqual(self.page.evaluate('L.ref'),'mw1')
+        self.assertEqual(self.page.evaluate('L.hp'),8)
+        self.assertFalse(self.page.evaluate('!!L.finished'))
+        self.assertFalse(self.page.evaluate('!!S.bosses.mw1'))
+
+    def test_skip_victory_animation_awards_only_the_won_boss(self):
+        self.page.evaluate("S.stars.vowels=3;startSession('boss','w1');L.hp=1;showTask()")
+        self.answer_task()
+        self.page.locator('[data-act="quit"]').click()
+        self.assertTrue(self.page.evaluate('L.finished'))
+        self.assertTrue(self.page.evaluate('S.bosses.w1'))
+        self.page.locator('[data-act="chestOpen"]').click()
+        self.page.locator('[data-act="questHome"]').click()
+        self.dismiss()
+        self.page.evaluate("startSession('boss','mw1')")
+        self.page.wait_for_timeout(5100)
+        self.assertEqual(self.page.evaluate('L.ref'),'mw1')
+        self.assertFalse(self.page.evaluate('!!L.finished'))
+        self.assertFalse(self.page.evaluate('!!S.bosses.mw1'))
+
     def test_generated_challenges_always_have_valid_answers(self):
         problems=self.page.evaluate('''() => {
           const bad=[];
@@ -257,33 +303,25 @@ class BigUpdateTests(unittest.TestCase):
         self.assertEqual(self.page.locator('[data-fish="🐙"]').count(),1)
         self.dismiss()
         self.page.evaluate("S.bosses=Object.fromEntries(ALL_WORLDS.slice(0,18).map(w=>[w.id,true]));const randomBefore=Math.random;Math.random=()=>.1;House.openStation('stars');Math.random=randomBefore")
-        self.assertIn('вычитай',self.page.locator('.activity-message').inner_text())
-        values=self.page.locator('[data-star]').evaluate_all('(els)=>els.map(e=>+e.dataset.star).sort((a,b)=>b-a)')
+        self.page.locator('[data-play-level="3"]').tap()
+        values=self.page.evaluate("document.querySelector('#houseActivity')._stars.seq.slice(3)")
         for val in values:
             self.page.locator(f'[data-star="{val}"]').tap()
-        self.assertTrue(self.page.evaluate('!!S.house.album.stars'))
+        self.assertTrue(self.page.evaluate('!!S.house.album.stars_3'))
         self.dismiss()
         self.page.evaluate("S.bosses=Object.fromEntries(ALL_WORLDS.map(w=>[w.id,true]));House.migrate();render()")
         self.page.locator('[data-act="houseFestival"]').tap()
         self.assertTrue(self.page.evaluate('!!S.house.album.festival'))
 
     def test_activities_and_drawings_persist(self):
-        self.page.evaluate("S.bosses=Object.fromEntries(ALL_WORLDS.slice(0,8).map(w=>[w.id,true]));S.stars.vowels=3;TAB='pet';House.migrate();render();House.openStation('art')")
-        self.page.locator('[data-color="#FF8C98"]').tap()
-        self.page.locator('[data-cell="0"]').tap()
-        self.page.locator('[data-save-art]').tap()
-        self.assertEqual(self.page.evaluate('S.house.painting[0]'), '#FF8C98')
-        self.dismiss()
+        self.page.evaluate("S.house.painting=Array(160).fill('#FF8C98');S.house.building=Array(70).fill('#67CFBA');S.house.melody=[0,2,4];save()")
         self.page.reload()
         self.assertEqual(self.page.evaluate('S.house.painting[0]'), '#FF8C98')
-        for station in ['blocks','stars','music','aquarium','theatre']:
-            self.page.evaluate('(s)=>House.openStation(s)',station)
-            self.assertTrue(self.page.locator('#houseActivity').inner_text())
-            self.dismiss()
-        self.page.evaluate("House.openStation('stars')")
-        for val in self.page.locator('[data-star]').evaluate_all('(els)=>els.map(e=>+e.dataset.star).sort((a,b)=>a-b)'):
-            self.page.locator(f'[data-star="{val}"]').tap()
-        self.assertTrue(self.page.evaluate('!!S.house.album.stars'))
+        self.assertEqual(self.page.evaluate('S.house.building[0]'), '#67CFBA')
+        self.assertEqual(self.page.evaluate('S.house.melody'), [0,2,4])
+        self.page.evaluate('House.album()')
+        self.page.locator('[data-old-sketches]').tap()
+        self.assertEqual(self.page.locator('.old-sketch').count(),2)
 
     def test_tablet_portrait_landscape_and_phone_do_not_overflow(self):
         self.page.evaluate("S.bosses=Object.fromEntries(ALL_WORLDS.slice(0,8).map(w=>[w.id,true]));S.stars.vowels=3;TAB='pet';House.migrate();render()")

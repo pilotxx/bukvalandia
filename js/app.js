@@ -28,7 +28,7 @@ function defaults() {
     history: {}, streak: { last: '', count: 0, best: 0 }, bestCombo: 0,
     pet: { species: 'dragon', name: '', color: null, hat: null, glasses: null, neck: null, body: null, feet: null, back: null, costume: null, satiety: 70, tick: Date.now(), stageSeen: 0, maxStage: 0, microSeen: 0 },
     owned: { th_sky: true, ball: true }, food: {}, hidden: {},
-    house: { room: 'living', placements: {}, positions: {}, quests: {}, album: {}, skills: {}, building: [], painting: [], melody: [], aquarium: {fish:['🐠','🐟'],water:0} },
+    house: { room: 'living', placements: {}, positions: {}, quests: {}, album: {}, skills: {}, building: [], painting: [], melody: [], aquarium: {fish:['🐠','🐟'],water:0}, play: {}, gallery: {}, routines: {}, questDrafts: {}, playVersion: 11 },
     payments: [],
     room: { pos: {} }, costumes: {}, memoSeen: {}, riddle: { day: '', n: 0 }, greetDay: '',
     piggy: { goal: null, saved: 0 },
@@ -60,6 +60,9 @@ function load() {
       const previous = JSON.parse(raw);
       if ((previous.v || 1) < 6) {
         try { if (!localStorage.getItem(KEY + '_before_v6')) localStorage.setItem(KEY + '_before_v6', raw); } catch (e) { /* Основной прогресс остаётся на прежнем месте. */ }
+      }
+      if (previous.onboarded && (previous.house?.playVersion || 0) < 11) {
+        try { if (!localStorage.getItem(KEY + '_before_v11')) localStorage.setItem(KEY + '_before_v11', raw); } catch (e) { /* Основное сохранение остаётся доступно. */ }
       }
       S = merge(defaults(), previous);
     } else S = defaults();
@@ -348,6 +351,7 @@ function fixMistake(l, i) {
    ОКНА, ТОСТЫ, КОНФЕТТИ
    ============================================================ */
 function modal({ html, buttons = [{ label: 'Хорошо', cls: 'primary' }], cls = '', onClose, dismiss = true }) {
+  $('#petSay')?.classList.remove('show');
   const wrap = document.createElement('div');
   wrap.className = 'modal-wrap';
   wrap.innerHTML = `<div class="modal ${cls}" role="dialog">${html}<div class="modal-btns">${buttons.map((b, i) => `<button class="btn ${b.cls || ''}" data-mb="${i}">${b.label}</button>`).join('')}</div></div>`;
@@ -708,6 +712,7 @@ function startSession(mode, ref) {
     hp: world && mode === 'boss' ? world.boss.hp : 0, hpMax: world && mode === 'boss' ? world.boss.hp : 0, hearts: 3,
     start: Date.now(), fastWrong: 0, petMul: petBonusMul(), mulStart: mode === 'mul' ? mulLearned() : 0,
   };
+  if (mode === 'quest') Quest.restore();
   const ov = document.createElement('div');
   ov.className = 'overlay lesson-ov';
   ov.id = 'lesson';
@@ -727,14 +732,18 @@ function startSession(mode, ref) {
   document.body.classList.add('no-scroll');
   Back.push(() => { askQuit(); return false; });
   if (mode === 'boss') Boss.start();
+  if (mode === 'quest' && L.pos >= L.queue.length) { Quest.finish(); return; }
   showTask();
 }
 function askQuit() {
   if (!L) return;
   if (L.finished) { closeLesson(); Back.done(); return; }
+  if (L.mode === 'boss' && L.defeating && L.hp <= 0) { Boss.cancel(L); finishBoss(true); return; }
+  if (L.mode === 'quest') { Quest.capture(); confirmBox('<h2>Продолжим позже?</h2><p>Путь сохранится.</p>', 'В домик', () => { Back.done(); TAB = 'pet'; closeLesson(); }, 'Остаться'); return; }
   confirmBox('<div class="m-icon">🚪</div><h2>Выйти?</h2><p>Если выйти сейчас, звёзды и монеты за этот урок не начислятся.</p>', 'Выйти', () => { Back.done(); closeLesson(); }, 'Остаться');
 }
 function closeLesson() {
+  if (L?.mode === 'boss') Boss.cancel(L);
   if (L && !L.finished) {
     const d = day();
     d.time += Math.min(30 * 60000, Date.now() - L.start);
@@ -755,6 +764,7 @@ function curTask() { return L.queue[L.pos]; }
 function showTask() {
   if (L.mode === 'boss') Boss.prepTask();
   const e = curTask(), t = e.t;
+  const restoredHint = L.mode === 'quest' && S.house.questDrafts?.[L.ref]?.pos === L.pos && S.house.questDrafts[L.ref].stepHint;
   L.answered = false; L.hint = false; L.shown = Date.now(); L.ord = []; L.typed = '';
   const body = $('#lBody');
   if (L.mode !== 'boss') $('#lProg').style.width = (100 * L.pos / L.queue.length) + '%';
@@ -786,14 +796,17 @@ function showTask() {
     ans = `<div class="ord-line ${t.join === '' ? 'letters' : ''}" id="ordLine"><span class="ph">${t.join === '' ? 'Нажимай на буквы по порядку' : 'Нажимай на слова по порядку'}</span></div>
       <div class="ord-pool ${t.join === '' ? 'letters' : ''}" id="ordPool">${t.pieces.map((p, i) => `<button class="piece" data-act="ordAdd" data-arg="${i}">${U.esc(p)}</button>`).join('')}</div>`;
   }
-  if (t.kind === 'multi') ans = Quest.multiHTML(t);
+  if (t.kind === 'scene') ans = SceneTasks.html(t);
+  else if (t.kind === 'multi') ans = Quest.multiHTML(t);
   else if (t.kind === 'mf') ans = MathFun.html(t);
   else if (t.ui) ans = RuFun.html(t);
   body.innerHTML = `${e.retry ? '<div class="retry-tag">🔁 Исправь ошибку</div>' : e.fromMistake || e.fix ? '<div class="retry-tag fix">🩹 Повторение</div>' : ''}
+    ${L.mode === 'quest' ? Quest.hud() : ''}
     <div class="prompt"><span>${t.prompt}</span>${Speech.available() && S.settings.tts ? `<button class="say" data-act="say" aria-label="Прочитать вслух">🔊</button>` : ''}</div>
     ${show}<div class="ans">${ans}</div><div class="hintbox" id="hintbox"></div>`;
   body.scrollTop = 0;
-  if (t.kind === 'multi') Quest.multiBind(t, body);
+  if (t.kind === 'scene') SceneTasks.bind(t, body);
+  else if (t.kind === 'multi') Quest.multiBind(t, body);
   else if (t.kind === 'mf') MathFun.bind(t, body);
   else if (t.ui) RuFun.bind(t, body);
   body.classList.remove('enter'); void body.offsetWidth; body.classList.add('enter');
@@ -803,6 +816,8 @@ function showTask() {
     ${t.kind === 'order' ? '<button class="btn primary" data-act="ordCheck" id="ordCheck" disabled>Проверить</button>' : ''}`;
   $('#fb').className = 'feedback';
   if (L.mode === 'boss') Boss.onTask(e);
+  if (restoredHint) { useHint(); L.hints--; }
+  if (L.mode === 'quest') Quest.capture();
 }
 function sayTask() {
   const t = curTask().t;
@@ -847,7 +862,8 @@ function useHint() {
     ? `<div class="hint-card"><b>💡 Подсказка:</b> ${t.hint}</div>`
     : `<div class="hint-card"><b>💡 Правило:</b> ${les ? les.rule : ''}</div>`;
   $('#hintbox').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  const hb = $('[data-act="hint"]'); if (hb) { hb.disabled = true; hb.textContent = '💡 Подсказка взята (награда меньше)'; }
+  const hb = $('[data-act="hint"]'); if (hb) { hb.disabled = true; hb.textContent = '💡 Подсказка открыта'; }
+  if (L.mode === 'quest') Quest.capture();
 }
 
 /* ---------- Составление предложения ---------- */
@@ -864,7 +880,8 @@ function answer(val) {
   if (!L || L.answered) return;
   const e = curTask(), t = e.t;
   let ok;
-  if (t.kind === 'choice' || t.kind === 'multi') ok = String(val) === String(t.answer);
+  if (t.kind === 'scene') ok = val === 'ok';
+  else if (t.kind === 'choice' || t.kind === 'multi') ok = String(val) === String(t.answer);
   else if (t.kind === 'stress' || t.kind === 'tap') ok = +val === t.answer;
   else if (t.kind === 'order') ok = t.answers.includes(L.ord.map(i => t.pieces[i]).join(t.join ?? ' '));
   else if (t.kind === 'input') ok = String(Number(val)) === String(Number(t.answer));
@@ -960,7 +977,7 @@ function answer(val) {
   const titles = ok ? (L.mode === 'boss' && L.lastCrit ? ['Суперудар! 💥'] : e.shield ? ['Щит разбит! 🛡️'] : e.retry ? ['Исправлено! 👏'] : ['Верно!', 'Молодец!', 'Отлично!', 'Правильно!', 'Здорово!']) : ['Не совсем…', 'Ошибочка!', 'Почти!'];
   const fb = $('#fb');
   fb.innerHTML = `<div class="fb-in"><div class="fb-h"><span class="fb-ic">${ok ? '✅' : '🧐'}</span><b>${U.rnd(titles)}</b>${gain ? `<span class="fb-coins">+${gain} <i class="ci"></i></span>` : ''}</div>
-    ${exp ? `<div class="fb-exp">${exp}</div>` : ''}
+    ${exp ? ((L.mode === 'quest' || L.mode === 'boss') ? `<details class="fb-reason"><summary>💡 Почему?</summary><div class="fb-exp">${exp}</div></details>` : `<div class="fb-exp">${exp}</div>`) : ''}
     <button class="btn ${ok ? 'primary' : 'warm'} big" data-act="next">${ok ? 'Дальше' : 'Понятно'}</button></div>`;
   const fbCls = 'feedback show ' + (ok ? 'ok' : 'bad');
   if (L.mode !== 'boss') fb.className = fbCls;
@@ -972,6 +989,7 @@ function answer(val) {
   if (after && Speech.enOk()) setTimeout(() => Speech.sayEn(after), ok ? 350 : 700);
   const hb = $('[data-act="hint"]'); if (hb) hb.disabled = true;
   if (L.mode === 'boss') Battle.afterAnswer();
+  if (L.mode === 'quest') Quest.capture();
   save();
 }
 function renderCombo() {
@@ -1958,6 +1976,9 @@ const ACTIONS = {
   houseFestival: () => House.festival(),
   houseTrain: a => House.train(a),
   houseQuests: () => Quest.open(),
+  houseActivities: () => House.activities(),
+  houseTricks: () => House.tricks(),
+  housePerform: a => House.performRoutine(a),
   questAgain: a => { Back.done(); closeLesson(); startSession('quest', a); },
   questHome: () => { Back.done(); TAB = 'pet'; closeLesson(); },
   prizeClaim: a => Economy.claimPrize(a),

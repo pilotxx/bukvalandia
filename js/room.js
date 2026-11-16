@@ -31,7 +31,7 @@ const Room = {
 
   itemHTML(i) {
     const p = Room.pos(i);
-    const inner = i.tank ? `<div class="tank" style="width:${i.h}px;height:${Math.round(i.h * 0.72)}px"><span class="fish f1">🐠</span><span class="fish f2">🐟</span><span class="fish f3">🐡</span><i class="bub b1"></i><i class="bub b2"></i></div>` : i.icon;
+    const inner = i.gallery ? Play.preview(i.gallery) : i.tank ? `<div class="tank" style="width:${i.h}px;height:${Math.round(i.h * 0.72)}px"><span class="fish f1">🐠</span><span class="fish f2">🐟</span><span class="fish f3">🐡</span><i class="bub b1"></i><i class="bub b2"></i></div>` : i.icon;
     return `<div class="ri z-${i.zone}" data-id="${i.id}" style="${Room.itemStyle(i, p)}">${inner}</div>`;
   },
   itemStyle(i, p) {
@@ -121,6 +121,7 @@ const Room = {
     if (cls) { void a.offsetWidth; a.classList.add(cls); }
   },
   say(text, voice = false, whisper = false) {
+    if (modalOpen > 0 || document.querySelector('.lesson-ov')) return;
     const b = $('#petSay');
     if (!b || !Room.root) return;
     const k = depthK(Room.pet.y);
