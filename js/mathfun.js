@@ -38,6 +38,10 @@ const MathFun = {
     m_unknown: [0.45, d => d < 3 ? MathFun.scaleTask(d, 'unk') : null],
     m_eq: [0.45, d => d < 3 ? MathFun.scaleTask(d, 'eq') : null],
     m_prob1: [0.55, d => MathFun.comicTask(d)],
+    m_col: [0.5, d => MathFun.colTask(d, 'add')],
+    m_colmul: [0.5, d => MathFun.colTask(d, 'mul')],
+    m_frac: [0.45, d => MathFun.shareTask(d)],
+    m_cal: [0.5, d => MathFun.calTask(d)],
   },
 
   /* ---------- Превращение задания ---------- */
@@ -662,6 +666,136 @@ const MathFun = {
         return ok && !err;
       }, 'Шаг 3 из 3: посчитай');
     };
+  },
+
+  /* ============================================================
+     🧾 Столбик: заполни окошки ответа справа налево
+     ============================================================ */
+  colTask(d, mode) {
+    const [a, b, op] = mode === 'mul' ? [...COLGEN.mul(d), '×'] : COLGEN.add(d);
+    const res = op === '+' ? a + b : op === '−' ? a - b : a * b;
+    return {
+      mf: 'col', a, b, op, answer: res, label: `🧾 ${a}${op}${b}`,
+      prompt: '🧾 Реши столбиком: впиши цифры ответа <b>справа налево</b> — начни с единиц',
+      explain: COLGEN.explain(a, b, op), hint: 'Сначала единицы (крайнее правое окошко). Получилось 10 и больше — пиши единицы, десяток запомни.',
+    };
+  },
+  colHTML(t) {
+    const n = String(t.answer).length, w = Math.max(String(t.a).length, String(t.b).length, n);
+    const row = s => `<span class="cmf-row">${String(s).padStart(w, ' ').split('').map(c => `<b>${c === ' ' ? '' : c}</b>`).join('')}</span>`;
+    const boxes = `<span class="cmf-row cmf-res">${Array.from({ length: w }, (_, k) => k < w - n ? '<b></b>' : `<button class="cmf-box" data-p="${w - 1 - k}"></button>`).join('')}</span>`;
+    return `<div class="mf mfcol"><div class="cmf" id="mfCol"><i class="cm-op">${t.op}</i>${row(t.a)}${row(t.b)}${boxes}</div>
+      <div class="mf-msg" id="mfMsg">Нажимай цифры — они встают в окошки справа налево</div>
+      <div class="mf-pad">${'1234567890'.split('').map(k => `<button data-k="${k}">${k}</button>`).join('')}<button data-k="del" class="kdel" aria-label="Стереть">⌫</button><button data-k="ok" class="kok" disabled aria-label="Проверить">✓</button></div></div>`;
+  },
+  colBind(t, body) {
+    const n = String(t.answer).length, dig = [], boxes = $$('.cmf-box', body), okb = $('[data-k="ok"]', body);
+    const box = p => boxes.find(b => +b.dataset.p === p);
+    const draw = () => { boxes.forEach(b => { const p = +b.dataset.p; b.textContent = dig[p] ?? ''; b.classList.toggle('cur', p === dig.length); }); okb.disabled = dig.length !== n; };
+    draw();
+    $$('.mf-pad button', body).forEach(b => b.addEventListener('click', () => {
+      if (L.answered) return;
+      const k = b.dataset.k;
+      if (k === 'del') dig.pop();
+      else if (k === 'ok') {
+        if (dig.length !== n) return;
+        const ok = Number(dig.slice().reverse().join('')) === Number(t.answer), right = String(t.answer).split('').reverse();
+        dig.forEach((x, p) => box(p).classList.add(x === right[p] ? 'ok' : 'bad'));
+        if (!ok) $('#mfMsg', body).innerHTML = `Правильный ответ: <b>${t.answer}</b>`;
+        $$('.mf-pad button', body).forEach(x => { x.disabled = true; });
+        MathFun.done(ok); return;
+      } else if (dig.length < n) dig.push(k);
+      Sound.play('tap'); draw();
+    }));
+  },
+
+  /* ============================================================
+     🍬 Доля числа: отложи нужную часть угощения
+     ============================================================ */
+  shareTask(d) {
+    const k = d === 1 ? 2 : d === 2 ? U.rnd([2, 3, 4]) : U.rnd([3, 4, 5, 6]), q = mr(2, 4), N = k * q;
+    const [em, w] = U.rnd([['🍬', 'конфета'], ['🍎', 'яблоко'], ['🌰', 'орех'], ['🍄', 'гриб'], ['🎈', 'шарик']]);
+    return {
+      mf: 'share', N, em, answer: q, label: `🍬 1/${k} от ${N} (${w})`,
+      prompt: `${em} Здесь ${nw(N, w)}. Отложи для питомца ${frac(1, k)} — нажми на нужные`,
+      explain: `${frac(1, k)} от ${N} — это ${N} : ${k} = <b>${q}</b>.`, hint: `Раздели ${N} на ${k} равных кучки — сколько в одной?`,
+    };
+  },
+  shareHTML(t) {
+    return `<div class="mf mfsh"><div class="sh-grid" id="shGrid">${Array.from({ length: t.N }, (_, i) => `<button class="sh-it" data-i="${i}">${t.em}</button>`).join('')}</div>
+      <div class="mf-msg" id="mfMsg">Выбрано: <b id="shN">0</b></div><div class="mf-row"><button class="btn primary" id="mfOk">Готово</button></div></div>`;
+  },
+  shareBind(t, body) {
+    const on = new Set(), grid = $('#shGrid', body);
+    $$('.sh-it', grid).forEach(b => b.addEventListener('click', () => {
+      if (L.answered) return;
+      const i = +b.dataset.i; if (on.has(i)) on.delete(i); else on.add(i);
+      b.classList.toggle('on', on.has(i)); $('#shN', body).textContent = on.size; Sound.play('tap');
+    }));
+    $('#mfOk', body).addEventListener('click', () => {
+      if (L.answered) return;
+      if (!on.size) { $('#mfMsg', body).textContent = 'Сначала нажми на угощение'; MathFun.shake(grid); return; }
+      const ok = on.size === Number(t.answer);
+      grid.classList.add(ok ? 'right' : 'wrong', 'locked');
+      if (!ok) $('#mfMsg', body).innerHTML = `Выбрано ${on.size}, а нужно <b>${t.answer}</b>`;
+      MathFun.done(ok);
+    });
+  },
+
+  /* ============================================================
+     📅 Календарь: нажми на нужное число
+     ============================================================ */
+  calTask(d) {
+    const m = mr(0, 11), days = MDAYS[m], off = mr(0, 6);               // off — день недели 1-го числа (0 = понедельник)
+    const wdOf = x => (off + x - 1) % 7, ACC = ['понедельник', 'вторник', 'среду', 'четверг', 'пятницу', 'субботу', 'воскресенье'];
+    const fem = w => [2, 4, 5].includes(w), neu = w => w === 6;
+    const ordOf = (w, n) => (neu(w) ? ['первое', 'второе', 'третье', 'четвёртое'] : fem(w) ? ['первую', 'вторую', 'третью', 'четвёртую'] : ['первый', 'второй', 'третий', 'четвёртый'])[n - 1];
+    const nth = (w, n) => { let c = 0; for (let x = 1; x <= days; x++) if (wdOf(x) === w && ++c === n) return x; return 0; };
+    const base = { mf: 'cal', m, off, days, today: 0 }, w = mr(0, 6), col = `«${['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'][w]}»`;
+    if (d === 1) {
+      const a = nth(w, 1);
+      return Object.assign(base, { answer: a, label: `📅 1-й ${WEEK[w]} ${MGEN[m]}`, prompt: `📅 Нажми на <b>${ordOf(w, 1)} ${ACC[w]}</b> этого месяца`,
+        explain: `${U.cap(WEEK[w])} — столбик ${col}. Первое число в нём — <b>${a}</b>.`, hint: 'Найди столбик нужного дня недели и посмотри, какое число в нём первое.' });
+    }
+    if (d === 2) {
+      const n = Math.random() < 0.5 ? 7 : mr(2, 6), today = mr(1, days - n), a = today + n;
+      return Object.assign(base, { today, answer: a, label: `📅 ${today}+${n} ${MGEN[m]}`,
+        prompt: `📅 Сегодня ${today} ${MGEN[m]} (📍). Нажми, какое число будет ${n === 7 ? '<b>через неделю</b>' : `через <b>${n}</b> ${U.plural(n, 'день', 'дня', 'дней')}`}`,
+        explain: `${today} + ${n} = <b>${a}</b>.${n === 7 ? ' Через неделю — тот же день недели, на строчку ниже.' : ''}`,
+        hint: n === 7 ? 'Через неделю — тот же день недели: опустись на одну строчку вниз.' : `Отсчитай ${n} ${U.plural(n, 'клетку', 'клетки', 'клеток')} вперёд от 📍.` });
+    }
+    if (Math.random() < 0.5) {
+      let a = 0; for (let x = days; x >= 1 && !a; x--) if (wdOf(x) === w) a = x;
+      return Object.assign(base, { answer: a, label: `📅 последний ${WEEK[w]} ${MGEN[m]}`,
+        prompt: `📅 Нажми на <b>${neu(w) ? 'последнее' : fem(w) ? 'последнюю' : 'последний'} ${ACC[w]}</b> этого месяца`,
+        explain: `В столбике ${col} последнее число — <b>${a}</b>.`, hint: 'Найди столбик нужного дня недели и спустись в самый низ.' });
+    }
+    const n = mr(2, 4), a = nth(w, n);
+    return Object.assign(base, { answer: a, label: `📅 ${n}-й ${WEEK[w]} ${MGEN[m]}`, prompt: `📅 Нажми на <b>${ordOf(w, n)} ${ACC[w]}</b> этого месяца`,
+      explain: `В столбике ${col} считаем сверху: ${n}-е число — <b>${a}</b>.`, hint: 'Найди столбик нужного дня недели и считай числа в нём сверху вниз.' });
+  },
+  calHTML(t) {
+    const cells = [];
+    for (let i = 0; i < t.off; i++) cells.push('<i></i>');
+    for (let x = 1; x <= t.days; x++) cells.push(`<button class="cal-d${(t.off + x - 1) % 7 >= 5 ? ' we' : ''}${x === t.today ? ' today' : ''}" data-d="${x}">${x}</button>`);
+    return `<div class="mf mfcal"><div class="cal-m">${U.cap(MONTHS[t.m])}</div><div class="cal-g">${['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map(x => `<span class="cal-h">${x}</span>`).join('')}${cells.join('')}</div>
+      <div class="mf-msg" id="mfMsg">Нажми на число, потом «Готово»</div><div class="mf-row"><button class="btn primary" id="mfOk">Готово</button></div></div>`;
+  },
+  calBind(t, body) {
+    let sel = 0;
+    $$('.cal-d', body).forEach(b => b.addEventListener('click', () => {
+      if (L.answered) return;
+      sel = +b.dataset.d; $$('.cal-d', body).forEach(x => x.classList.toggle('sel', x === b)); Sound.play('tap');
+    }));
+    $('#mfOk', body).addEventListener('click', () => {
+      if (L.answered) return;
+      if (!sel) { $('#mfMsg', body).textContent = 'Сначала нажми на число'; MathFun.shake($('.cal-g', body)); return; }
+      const ok = sel === Number(t.answer), good = $(`.cal-d[data-d="${t.answer}"]`, body);
+      if (good) good.classList.add('right');
+      if (!ok) { const bad = $(`.cal-d[data-d="${sel}"]`, body); if (bad) bad.classList.add('wrong'); $('#mfMsg', body).innerHTML = `Нужно было: <b>${t.answer}</b>`; }
+      $$('.cal-d', body).forEach(x => { x.disabled = true; });
+      MathFun.done(ok);
+    });
   },
 
   /* ---------- Общие кусочки ---------- */

@@ -724,4 +724,204 @@ const MATH_WORLDS = [
       },
     ],
   },
+
+  /* ------------------------------------------------ 10 (3 класс, этап 3 — 20.11.2026) */
+  {
+    id: 'mw10', g3: true, name: 'Звёздная обсерватория', emoji: '🔭', c1: '#80DEEA', c2: '#00838F',
+    boss: { id: 'mb10', name: 'Комета Дробилка', emoji: '☄️', hp: 12, story: 'Комета Дробилка врезалась в обсерваторию: разбила числа на доли, рассыпала столбики и перепутала все дни в календаре. Собери всё обратно!' },
+    lessons: [
+      {
+        id: 'm_col', title: 'Сложение и вычитание столбиком', icon: '🧾', grade: 3, ramp: true, bank: RAMP,
+        rule: 'Пиши <b>разряд под разрядом</b>: единицы под единицами, десятки под десятками.<br>Считай <b>справа налево</b>, начиная с единиц.<br>Получилось 10 и больше — пиши единицы, а <b>1 десяток</b> запомни и прибавь к следующему разряду.<br>Не хватает — <b>займи 1</b> у соседа слева.',
+        make(d0) {
+          const d = lvD(d0), [a, b, op] = COLGEN.add(d), r = op === '+' ? a + b : a - b;
+          return inTask('Реши <b>столбиком</b>', colShow(a, op, b), r, {
+            explain: COLGEN.explain(a, b, op), hint: 'Начни с единиц (справа). Если получилось 10 и больше — 1 десяток запомни.', label: `${a}${op}${b}`,
+          });
+        },
+      },
+      {
+        id: 'm_colmul', title: 'Умножение столбиком', icon: '✍️', grade: 3, ramp: true, bank: RAMP,
+        rule: 'Однозначное число пишем <b>под единицами</b>.<br>Умножаем <b>по разрядам справа налево</b>: единицы, потом десятки, потом сотни.<br><i>47 · 6: 7 · 6 = 42 — пишем 2, 4 запомнили; 4 · 6 = 24, да ещё 4 — 28. Ответ: 282.</i>',
+        make(d0) {
+          const d = lvD(d0), [a, b] = COLGEN.mul(d);
+          return inTask('Умножь <b>столбиком</b>', colShow(a, '×', b), a * b, {
+            explain: COLGEN.explain(a, b, '×'), hint: `Сначала умножь единицы: ${a % 10} · ${b}.`, label: `${a}×${b}`,
+          });
+        },
+      },
+      {
+        id: 'm_frac', title: 'Доли', icon: '🍕', grade: 3, ramp: true, bank: RAMP,
+        rule: 'Разделим целое на <b>равные части</b> — каждая часть называется <b>долей</b>.<br>На 2 части — <b>половина</b> (<i>одна вторая</i>), на 3 — <b>треть</b>, на 4 — <b>четверть</b>.<br>Найти долю числа — <b>раздели</b>: <i>треть от 12 — это 12 : 3 = 4</i>.<br>Чем на <b>больше</b> частей делим, тем доля <b>меньше</b>.',
+        make(d0) {
+          const d = lvD(d0), v = Math.random();
+          if (d === 1) {
+            const k = U.rnd([2, 3, 4, 5, 6, 8]), dens = [k, ...U.sample([2, 3, 4, 5, 6, 8].filter(x => x !== k), 3)];
+            if (v < 0.55) {
+              return T.choice('Какая доля круга <b>закрашена</b>?', dens.map(x => ({ v: String(x), label: frac(1, x), html: true })), String(k), {
+                show: `<div class="frac-pic">${pieSVG(k, 1)}</div>`, label: `доля 1/${k} (круг)`,
+                explain: `Круг разделили на ${k} равных ${U.plural(k, 'часть', 'части', 'частей')}, закрашена одна — это ${frac(1, k)} (<b>${FR_NAME[k]}</b>).`,
+              });
+            }
+            return T.choice(`Пирог разрезали на <b>${k}</b> равных ${U.plural(k, 'часть', 'части', 'частей')}. Как называется одна часть?`, dens.map(x => opt(String(x), FR_NAME[x])), String(k), {
+              show: `<div class="frac-pic">${pieSVG(k, 0)}</div>`, label: `название 1/${k}`, explain: `Одна часть из ${k} — это <b>${FR_NAME[k]}</b> (${frac(1, k)}).`,
+            });
+          }
+          if (d === 2) {
+            const k = U.rnd([2, 3, 4, 5]), q = mr(2, k === 2 ? 9 : 6), N = k * q;
+            if (v < 0.5) {
+              return inTask('Найди часть числа', eq(`${frac(1, k)} от ${N} = [?]`), q, {
+                explain: `Чтобы найти ${frac(1, k)} числа, делим его на ${k}: ${N} : ${k} = <b>${q}</b>.`, hint: `Раздели ${N} на ${k} равных частей.`, label: `1/${k} от ${N}`,
+              });
+            }
+            const [w, em] = U.rnd([['конфета', '🍬'], ['яблоко', '🍎'], ['орех', '🌰'], ['гриб', '🍄'], ['шарик', '🎈']]);
+            const part = { 2: 'Половину', 3: 'Треть', 4: 'Четверть', 5: 'Пятую часть' }[k];
+            return inTask(`В корзинке ${nw(N, w)}. <b>${part}</b> отдали друзьям. Сколько ${many(w)} отдали?`, `<div class="eq">${em} ${N} : ${k} = [?]</div>`, q, {
+              explain: `${part} — это ${frac(1, k)}. ${N} : ${k} = <b>${q}</b>.`, hint: `${part} — значит, раздели на ${k}.`, label: `${part} от ${N}`,
+            });
+          }
+          if (v < 0.5) {
+            const k = U.rnd([2, 3, 4, 5, 6]), q = mr(2, 9);
+            return inTask('Найди число по его доле', eq(`${frac(1, k)} числа = ${q}. Число = [?]`), k * q, {
+              explain: `Одна часть — ${q}, а всего частей ${k}: ${q} · ${k} = <b>${k * q}</b>.`, hint: `Если одна из ${k} частей равна ${q}, то всё число в ${k} раз больше.`, label: `1/${k} числа = ${q}`,
+            });
+          }
+          let a, b; do { a = U.rnd([2, 3, 4, 5, 6, 8, 10]); b = U.rnd([2, 3, 4, 5, 6, 8, 10]); } while (a === b);
+          return cmpTask(b, a, `${frac(1, a)} ○ ${frac(1, b)}`,
+            `Чем на <b>больше</b> частей делим, тем доля <b>меньше</b>: ${frac(1, a)} ${a < b ? '&gt;' : '&lt;'} ${frac(1, b)}.`, `1/${a} и 1/${b}`);
+        },
+      },
+      {
+        id: 'm_cal', title: 'Календарь', icon: '📅', grade: 3, ramp: true, bank: RAMP,
+        rule: 'В году <b>12 месяцев</b>, в неделе <b>7 дней</b>.<br>По 31 дню: январь, март, май, июль, август, октябрь, декабрь. По 30: апрель, июнь, сентябрь, ноябрь. В феврале — <b>28</b> (а раз в четыре года — 29).<br>Подсказка — <b>кулачок</b>: косточки — месяцы по 31 дню, ямки — короче.',
+        make(d0) {
+          const d = lvD(d0), v = mr(1, 4), m = mr(0, 11), wd = mr(0, 6);
+          if (d === 1) {
+            if (v === 1) return T.choice(`Какой месяц идёт после месяца <b>${MONTHS[m]}</b>?`, [MONTHS[(m + 1) % 12], ...U.sample(MONTHS.filter((_, i) => i !== (m + 1) % 12 && i !== m), 3)], MONTHS[(m + 1) % 12],
+              { label: `после: ${MONTHS[m]}`, explain: `${U.cap(MONTHS[m])} → <b>${MONTHS[(m + 1) % 12]}</b>.` });
+            if (v === 2) return T.choice(`Какой день недели идёт после дня <b>${WEEK[wd]}</b>?`, [WEEK[(wd + 1) % 7], ...U.sample(WEEK.filter((_, i) => i !== (wd + 1) % 7 && i !== wd), 3)], WEEK[(wd + 1) % 7],
+              { label: `после: ${WEEK[wd]}`, explain: `${U.cap(WEEK[wd])} → <b>${WEEK[(wd + 1) % 7]}</b>.` });
+            if (v === 3) return T.choice(`Какое время года — <b>${MONTHS[m]}</b>?`, SEASONS.map(s => opt(s, s)), SEASONS[Math.floor(((m + 1) % 12) / 3)],
+              { keepOrder: true, label: `сезон: ${MONTHS[m]}`, explain: `${U.cap(MONTHS[m])} — это <b>${SEASONS[Math.floor(((m + 1) % 12) / 3)]}</b>.` });
+            return T.choice(`Какой день недели идёт <b>перед</b> днём «${WEEK[wd]}»?`, [WEEK[(wd + 6) % 7], ...U.sample(WEEK.filter((_, i) => i !== (wd + 6) % 7 && i !== wd), 3)], WEEK[(wd + 6) % 7],
+              { label: `перед: ${WEEK[wd]}`, explain: `<b>${U.cap(WEEK[(wd + 6) % 7])}</b> → ${WEEK[wd]}.` });
+          }
+          if (d === 2) {
+            if (v === 1) return T.choice(`Сколько дней в месяце <b>${MONTHS[m]}</b>${m === 1 ? ' (в обычном, не високосном году)' : ''}?`, ['28', '30', '31'], String(MDAYS[m]), {
+              keepOrder: true, label: `дней: ${MONTHS[m]}`,
+              explain: m === 1 ? 'В феврале <b>28</b> дней, а раз в четыре года (в високосный год) — 29.' : `В месяце ${MONTHS[m]} — <b>${MDAYS[m]}</b> ${U.plural(MDAYS[m], 'день', 'дня', 'дней')}.`,
+            });
+            if (v === 2) return inTask(`Какой по счёту месяц — <b>${MONTHS[m]}</b>?`, eq(`${U.cap(MONTHS[m])} — [?]-й месяц`), m + 1, {
+              explain: `Январь — 1-й, февраль — 2-й… ${U.cap(MONTHS[m])} — <b>${m + 1}-й</b>.`, hint: 'Считай месяцы с января.', label: `номер: ${MONTHS[m]}`,
+            });
+            if (v === 3) {
+              const day = mr(1, MDAYS[m] - 7);
+              return inTask(`Сегодня ${day} ${MGEN[m]}. Какое число будет <b>через неделю</b>?`, eq(`${day} + 7 = [?]`), day + 7, {
+                explain: `Неделя — 7 дней: ${day} + 7 = <b>${day + 7}</b> ${MGEN[m]}.`, hint: 'В неделе 7 дней.', label: `${day} ${MGEN[m]} + неделя`,
+              });
+            }
+            const n = mr(2, 5), r = (wd + n) % 7;
+            return T.choice(`Сегодня <b>${WEEK[wd]}</b>. Какой день недели будет через <b>${n}</b> ${U.plural(n, 'день', 'дня', 'дней')}?`,
+              [WEEK[r], ...U.sample(WEEK.filter((_, i) => i !== r), 3)], WEEK[r], { label: `${WEEK[wd]} + ${n}`, explain: `Считаем: ${Array.from({ length: n }, (_, i) => WEEK[(wd + i + 1) % 7]).join(' → ')}. Ответ: <b>${WEEK[r]}</b>.` });
+          }
+          if (v === 1) {
+            const mm = U.rnd([0, 2, 3, 4, 5, 6, 7, 8, 9, 10]), n = mr(3, 8), day = MDAYS[mm] - mr(0, n - 2), r = day + n - MDAYS[mm];
+            return inTask(`Сегодня ${day} ${MGEN[mm]}. Какое число будет через <b>${n}</b> ${U.plural(n, 'день', 'дня', 'дней')}?`, eq(`[?] ${MGEN[(mm + 1) % 12]}`), r, {
+              explain: `В месяце ${MONTHS[mm]} ${MDAYS[mm]} ${U.plural(MDAYS[mm], 'день', 'дня', 'дней')}. После ${MDAYS[mm]}-го начинается новый месяц: будет <b>${r}</b> ${MGEN[(mm + 1) % 12]}.`,
+              hint: `Сколько дней в месяце ${MONTHS[mm]}? Досчитай до конца месяца и продолжи с 1-го.`, label: `${day} ${MGEN[mm]} + ${n}`,
+            });
+          }
+          if (v === 2) {
+            const k = mr(2, 5);
+            return inTask(`Сколько дней в <b>${k}</b> ${U.plural(k, 'неделе', 'неделях', 'неделях')}?`, eq(`7 · ${k} = [?]`), 7 * k, { explain: `В неделе 7 дней: 7 · ${k} = <b>${7 * k}</b>.`, hint: 'В неделе 7 дней.', label: `${k} недели` });
+          }
+          if (v === 3) {
+            const n = mr(8, 13), r = (wd + n) % 7;
+            return T.choice(`Сегодня <b>${WEEK[wd]}</b>. Какой день недели будет через <b>${n}</b> ${U.plural(n, 'день', 'дня', 'дней')}?`,
+              [WEEK[r], ...U.sample(WEEK.filter((_, i) => i !== r), 3)], WEEK[r], { label: `${WEEK[wd]} + ${n}`, explain: `Через 7 дней снова будет ${WEEK[wd]}, осталось ещё ${n - 7}: <b>${WEEK[r]}</b>.` });
+          }
+          const a = mr(0, 10), s = MDAYS[a] + MDAYS[a + 1];
+          return inTask(`Сколько дней в месяцах <b>${MONTHS[a]}</b> и <b>${MONTHS[a + 1]}</b> вместе?`, eq(`${MDAYS[a]} + ${MDAYS[a + 1]} = [?]`), s, {
+            explain: `${U.cap(MONTHS[a])} — ${MDAYS[a]}, ${MONTHS[a + 1]} — ${MDAYS[a + 1]}: вместе <b>${s}</b>.`, hint: 'Вспомни кулачок: сколько дней в каждом месяце?', label: `${MONTHS[a]}+${MONTHS[a + 1]}`,
+          });
+        },
+      },
+    ],
+  },
 ];
+
+/* ---------- Мир 10: столбики, доли, календарь ---------- */
+/* Запись столбиком; [?] — окошко ответа под чертой */
+const colShow = (a, op, b) => `<div class="colm"><i class="cm-op">${op}</i><span>${a}</span><span>${b}</span><span class="cm-res">[?]</span></div>`;
+const COLGEN = {
+  /* Пара для сложения/вычитания столбиком по уровню: 1 — без перехода, 2 — один переход, 3 — два перехода или заём через 0 */
+  add(d) {
+    const D = n => [n % 10, Math.floor(n / 10) % 10, Math.floor(n / 100)];
+    const carries = (a, b) => { const x = D(a), y = D(b); let c = 0, n = 0; for (let i = 0; i < 3; i++) { const s = x[i] + y[i] + c; c = s >= 10 ? 1 : 0; n += c; } return n; };
+    const borrows = (a, b) => { const x = D(a), y = D(b); let c = 0, n = 0; for (let i = 0; i < 3; i++) { const s = x[i] - y[i] - c; c = s < 0 ? 1 : 0; n += c; } return n; };
+    const add = Math.random() < 0.5;
+    for (let k = 0; k < 400; k++) {
+      if (add) {
+        const a = mr(102, 870), b = mr(d === 1 ? 101 : 15, 899);
+        if (a + b > 999 || (d > 1 && b < 100 && Math.random() < 0.5)) continue;
+        const n = carries(a, b);
+        if ((d === 1 && n === 0) || (d === 2 && n === 1) || (d === 3 && n === 2)) return [a, b, '+'];
+      } else {
+        const a = d === 3 && Math.random() < 0.5 ? mr(2, 9) * 100 + mr(0, 9) : mr(200, 999), b = mr(d === 1 ? 101 : 15, a - 11);
+        if (d === 3 && Math.floor(a / 10) % 10 === 0 && a % 10 < b % 10 && borrows(a, b) >= 1) return [a, b, '−'];
+        const n = borrows(a, b);
+        if ((d === 1 && n === 0) || (d === 2 && n === 1) || (d === 3 && n === 2)) return [a, b, '−'];
+      }
+    }
+    return add ? [245, 132, '+'] : [568, 235, '−'];
+  },
+  /* Умножение столбиком на однозначное: 1 — без перехода, 2 — двузначное с переходом, 3 — трёхзначное */
+  mul(d) {
+    for (let k = 0; k < 400; k++) {
+      const b = mr(2, 9);
+      if (d === 1) { const a = mr(11, 49); if ((a % 10) * b < 10 && Math.floor(a / 10) * b < 10) return [a, b]; continue; }
+      if (d === 2) { const a = mr(13, 99); if ((a % 10) * b >= 10 && a * b < 1000) return [a, b]; continue; }
+      const a = mr(102, 333); if (a * b < 1000 && (a % 10) * b >= 10) return [a, b];
+    }
+    return [47, 6];
+  },
+  /* Объяснение по разрядам */
+  explain(a, b, op) {
+    const R = ['единицы', 'десятки', 'сотни'], dg = (n, i) => Math.floor(n / 10 ** i) % 10;
+    const res = op === '+' ? a + b : op === '−' ? a - b : a * b, steps = [];
+    let c = 0;
+    const len = String(Math.max(a, b)).length;
+    for (let i = 0; i < len; i++) {
+      const x = dg(a, i), y = op === '×' ? b : dg(b, i);
+      if (op === '+') { const s = x + y + c; steps.push(`${R[i]}: ${x} + ${y}${c ? ' + 1' : ''} = ${s}${s >= 10 && i < len - 1 ? ` — пишем ${s % 10}, 1 запоминаем` : ''}`); c = s >= 10 ? 1 : 0; }
+      else if (op === '−') {
+        const s0 = x - c, t = s0 - y < 0, s = t ? s0 + 10 - y : s0 - y;
+        let pre;
+        if (!t) pre = c ? `${x} − 1 = ${s0}; ${s0}` : `${x}`;
+        else if (c && x === 0) pre = '0 − 1 — не хватает, занимаем 1 у соседа слева: 10 − 1 = 9; 9';
+        else if (c) pre = `${x} − 1 = ${s0}; ${s0} − ${y} — не хватает, занимаем 1 у соседа слева: ${s0 + 10}`;
+        else pre = `${x} − ${y} — не хватает, занимаем 1 у соседа слева: ${s0 + 10}`;
+        steps.push(`${R[i]}: ${pre} − ${y} = ${s}`); c = t ? 1 : 0;
+      }
+      else { const s = x * y + c; steps.push(`${R[i]}: ${x} · ${y}${c ? ` + ${c}` : ''} = ${s}${s >= 10 && i < len - 1 ? ` — пишем ${s % 10}, ${Math.floor(s / 10)} запоминаем` : ''}`); c = Math.floor(s / 10); }
+    }
+    return `${steps.join('<br>')}<br>Ответ: <b>${res}</b>.`;
+  },
+};
+const FR_NAME = { 2: 'одна вторая (половина)', 3: 'одна третья (треть)', 4: 'одна четвёртая (четверть)', 5: 'одна пятая', 6: 'одна шестая', 8: 'одна восьмая', 10: 'одна десятая' };
+const frac = (n, d) => `<span class="frac"><b>${n}</b><i>${d}</i></span>`;
+/* Круг из k равных частей, закрашено on частей */
+function pieSVG(k, on) {
+  let p = '';
+  for (let i = 0; i < k; i++) {
+    const a0 = (i / k) * 2 * Math.PI - Math.PI / 2, a1 = ((i + 1) / k) * 2 * Math.PI - Math.PI / 2;
+    const x0 = (50 + 44 * Math.cos(a0)).toFixed(1), y0 = (50 + 44 * Math.sin(a0)).toFixed(1), x1 = (50 + 44 * Math.cos(a1)).toFixed(1), y1 = (50 + 44 * Math.sin(a1)).toFixed(1);
+    p += `<path d="M50 50 L${x0} ${y0} A44 44 0 0 1 ${x1} ${y1} Z" fill="${i < on ? '#FF8A5C' : '#FFF4E0'}" stroke="#B5531F" stroke-width="2.2" stroke-linejoin="round"/>`;
+  }
+  return `<svg class="pie" viewBox="0 0 100 100">${p}</svg>`;
+}
+const MONTHS = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'];
+const MGEN = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
+const MDAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+const WEEK = ['понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота', 'воскресенье'];
+const SEASONS = ['зима', 'весна', 'лето', 'осень'];

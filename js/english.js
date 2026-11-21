@@ -122,6 +122,17 @@ function letterTask(kind, pool) {
     { explain: `В алфавите: ${after ? UL + ', ' + EN_ABC[t].toUpperCase() : EN_ABC[t].toUpperCase() + ', ' + UL}.`, label: `${after ? 'после' : 'перед'} ${UL}` });
 }
 
+/* ---------- Мир 9: время, распорядок дня, дни недели, город ---------- */
+V.routine = [['get up', 'вставать', '⏰'], ['wash my face', 'умываться', '🚿'], ['brush my teeth', 'чистить зубы', '🪥'], ['have breakfast', 'завтракать', '🍳'],
+  ['go to school', 'идти в школу', '🏫'], ['have lunch', 'обедать', '🍲'], ['do homework', 'делать уроки', '📝'], ['play with friends', 'играть с друзьями', '🧸'],
+  ['watch TV', 'смотреть телевизор', '📺'], ['have dinner', 'ужинать', '🍽️'], ['have a bath', 'принимать ванну', '🛁'], ['go to bed', 'ложиться спать', '🛌']];
+V.town = [['shop', 'магазин', '🏪'], ['park', 'парк', '🏞️'], ['hospital', 'больница', '🏥'], ['cafe', 'кафе', '☕'], ['cinema', 'кинотеатр', '🎬'], ['zoo', 'зоопарк', '🦓'],
+  ['library', 'библиотека', '📚'], ['post office', 'почта', '🏤'], ['street', 'улица', '🛣️'], ['bus stop', 'остановка', '🚏'], ['bridge', 'мост', '🌉'],
+  ['museum', 'музей', '🏛️'], ['swimming pool', 'бассейн', '🏊']];
+const EN_ROUTINE_S = [['I', 'get', 'up', 'at', 'seven.', 'Я встаю в семь.', '⏰'], ['I', 'have', 'breakfast', 'at', 'eight.', 'Я завтракаю в восемь.', '🍳'],
+  ['I', 'go', 'to', 'school', 'every', 'day.', 'Я хожу в школу каждый день.', '🏫'], ['I', 'do', 'my', 'homework', 'after', 'lunch.', 'Я делаю уроки после обеда.', '📝'],
+  ['I', 'go', 'to', 'bed', 'at', 'nine.', 'Я ложусь спать в девять.', '🛌'], ['He', 'gets', 'up', 'at', 'six.', 'Он встаёт в шесть.', '⏰']];
+
 const EN_WORLDS = [
 
   /* ------------------------------------------------ 1 */
@@ -250,7 +261,9 @@ const EN_WORLDS = [
         bank: [['A fish [can|can\'t] swim.', '🐟'], ['A fish [can\'t|can] walk.', '🐟'], ['A bird [can|can\'t] fly.', '🐦'], ['A dog [can|can\'t] run.', '🐶'], ['A dog [can\'t|can] fly.', '🐶'],
           ['A frog [can|can\'t] jump.', '🐸'], ['A monkey [can|can\'t] climb.', '🐵'], ['An elephant [can\'t|can] fly.', '🐘'], ['A snake [can\'t|can] walk.', '🐍'],
           ['A penguin [can\'t|can] fly.', '🐧'], ['A penguin [can|can\'t] swim.', '🐧'], ['A horse [can|can\'t] run.', '🐴'], ['A cow [can\'t|can] fly.', '🐮'],
-          ['A duck [can|can\'t] swim.', '🦆'], ['A baby [can\'t|can] read.', '👶']],
+          ['A duck [can|can\'t] swim.', '🦆'], ['A baby [can\'t|can] read.', '👶'],
+          ['A cat [can|can\'t] climb.', '🐱'], ['A fish [can\'t|can] run.', '🐟'], ['A kangaroo [can|can\'t] jump.', '🦘'], ['A tiger [can|can\'t] run.', '🐯'],
+          ['A turtle [can\'t|can] fly.', '🐢'], ['A parrot [can|can\'t] talk.', '🦜'], ['A rabbit [can|can\'t] jump.', '🐰'], ['A pig [can\'t|can] fly.', '🐷']],
         make([s, em]) {
           return enGap(s, 'Вставь <b>can</b> или <b>can\'t</b>', { pic: em, small: true, explain: g => g.answer === 'can' ? `<b>${g.full}</b> — да, может! <i>can</i> = может, умеет.` : `<b>${g.full}</b> — не может. <i>can't</i> = не может.` });
         },
@@ -311,7 +324,9 @@ const EN_WORLDS = [
         rule: '<b>I am</b> — я есть<br><b>he / she / it is</b> — он / она / оно<br><b>we / you / they are</b> — мы / вы, ты / они<br><i>I am eight. She is my sister. They are friends.</i>',
         bank: ['I [am|is|are] eight.', 'She [is|am|are] my sister.', 'They [are|am|is] friends.', 'We [are|am|is] happy.', 'It [is|am|are] a cat.', 'You [are|am|is] my friend.',
           'He [is|am|are] tall.', 'Tom [is|am|are] ten.', 'My dogs [are|am|is] big.', 'The ball [is|am|are] red.', 'I [am|is|are] a pupil.', 'Kate and Ann [are|am|is] sisters.',
-          'The cats [are|am|is] black.', 'My mum [is|am|are] a doctor.'],
+          'The cats [are|am|is] black.', 'My mum [is|am|are] a doctor.',
+          'I [am|is|are] happy today.', 'The sun [is|am|are] yellow.', 'Bob and Tim [are|am|is] brothers.', 'My cat [is|am|are] small.',
+          'We [are|am|is] in the park.', 'The apples [are|am|is] green.', 'She [is|am|are] nine.', 'You [are|am|is] tall.'],
         make(s) {
           return enGap(s, 'Вставь <b>am</b>, <b>is</b> или <b>are</b>', { small: true, explain: g => `<b>${g.full}</b> — ${g.answer === 'am' ? 'с I всегда <b>am</b>.' : g.answer === 'is' ? 'один (он, она, оно) — <b>is</b>.' : 'много (мы, вы, они) или you — <b>are</b>.'}` });
         },
@@ -321,7 +336,9 @@ const EN_WORLDS = [
         rule: '«У меня есть…»:<br><b>I / you / we / they have got</b> — <i>I have got a cat.</i><br><b>he / she / it has got</b> — <i>She has got a doll.</i>',
         bank: ['I [have|has] got a cat.', 'She [has|have] got a doll.', 'They [have|has] got a ball.', 'My brother [has|have] got a bike.', 'We [have|has] got a garden.',
           'He [has|have] got a dog.', 'You [have|has] got a nice bag.', 'The cat [has|have] got green eyes.', 'Ann [has|have] got a sister.', 'I [have|has] got two brothers.',
-          'It [has|have] got a long tail.', 'My friends [have|has] got a puppy.'],
+          'It [has|have] got a long tail.', 'My friends [have|has] got a puppy.',
+          'We [have|has] got a big house.', 'Dad [has|have] got a new car.', 'The bird [has|have] got blue wings.', 'You [have|has] got a red pen.',
+          'Kate [has|have] got a kite.', 'They [have|has] got three cats.', 'I [have|has] got a robot.', 'The dog [has|have] got a ball.'],
         make(s) {
           return enGap(s, 'Вставь <b>have</b> или <b>has</b>', { small: true, explain: g => `<b>${g.full}</b> — ${g.answer === 'has' ? 'он, она, оно → <b>has got</b>.' : 'я, ты, мы, они → <b>have got</b>.'}` });
         },
@@ -362,7 +379,9 @@ const EN_WORLDS = [
         id: 'e_prep', title: 'in, on, under', icon: '📦', grade: 2,
         rule: '<b>in</b> — в, внутри: <i>in the box</i><br><b>on</b> — на: <i>on the table</i><br><b>under</b> — под: <i>under the table</i>',
         bank: [['cat', '🐱', 'in'], ['cat', '🐱', 'on'], ['cat', '🐱', 'under'], ['ball', '⚽', 'in'], ['ball', '⚽', 'under'], ['dog', '🐶', 'on'], ['dog', '🐶', 'under'],
-          ['book', '📖', 'on'], ['mouse', '🐭', 'in'], ['mouse', '🐭', 'under'], ['teddy bear', '🧸', 'on'], ['apple', '🍎', 'in']],
+          ['book', '📖', 'on'], ['mouse', '🐭', 'in'], ['mouse', '🐭', 'under'], ['teddy bear', '🧸', 'on'], ['apple', '🍎', 'in'],
+          ['book', '📖', 'in'], ['book', '📖', 'under'], ['ball', '⚽', 'on'], ['apple', '🍎', 'on'], ['apple', '🍎', 'under'], ['teddy bear', '🧸', 'in'],
+          ['teddy bear', '🧸', 'under'], ['dog', '🐶', 'in']],
         make([w, em, rel]) {
           const place = rel === 'in' ? 'box' : 'table';
           const RU = { in: 'в', on: 'на', under: 'под' };
@@ -391,7 +410,10 @@ const EN_WORLDS = [
         bank: [['cat', 'cats', '🐱', ['cates', 'cat']], ['dog', 'dogs', '🐶', ['doges', 'dog']], ['apple', 'apples', '🍎', ['applees', 'appls']], ['box', 'boxes', '📦', ['boxs', 'box']],
           ['fox', 'foxes', '🦊', ['foxs', 'foxies']], ['bus', 'buses', '🚌', ['buss', 'busies']], ['dress', 'dresses', '👗', ['dresss', 'dressies']], ['watch', 'watches', '⌚', ['watchs', 'watchies']],
           ['baby', 'babies', '👶', ['babys', 'babyes']], ['child', 'children', '🧒', ['childs', 'childes']], ['mouse', 'mice', '🐭', ['mouses', 'mices']], ['man', 'men', '👨', ['mans', 'manes']],
-          ['tooth', 'teeth', '🦷', ['tooths', 'toothes']], ['foot', 'feet', '🦶', ['foots', 'feets']], ['sheep', 'sheep', '🐑', ['sheeps', 'sheepes']]],
+          ['tooth', 'teeth', '🦷', ['tooths', 'toothes']], ['foot', 'feet', '🦶', ['foots', 'feets']], ['sheep', 'sheep', '🐑', ['sheeps', 'sheepes']],
+          ['bird', 'birds', '🐦', ['birdes', 'bird']], ['peach', 'peaches', '🍑', ['peachs', 'peachies']], ['strawberry', 'strawberries', '🍓', ['strawberrys', 'strawberryes']],
+          ['woman', 'women', '👩', ['womans', 'womanes']], ['brush', 'brushes', '🖌️', ['brushs', 'brushies']], ['frog', 'frogs', '🐸', ['froges', 'frog']],
+          ['pencil', 'pencils', '✏️', ['penciles', 'pencil']]],
         make([sg, pl, em, wrong]) {
           const why = /es$/.test(pl) && !/ies$/.test(pl) ? 'после s, x, ch, sh добавляем <b>-es</b>.' : /ies$/.test(pl) ? '<b>y</b> меняется на <b>ies</b>.' : pl === sg + 's' ? 'обычно просто добавляем <b>-s</b>.' : 'это особое слово, его нужно запомнить!';
           return T.choice(`Один — <b>${sg}</b>. А если много?`, [pl, ...wrong], pl, { pic: em + em + em, sayAfter: `one ${sg}, two ${pl}`, explain: `<b>${sg} → ${pl}</b>: ${why}`, label: `${sg} → ${pl}` });
@@ -411,7 +433,9 @@ const EN_WORLDS = [
         id: 'e_present', title: 'He likes, she plays', icon: '⏰', grade: 3,
         rule: 'Когда говорим о том, что происходит <b>обычно</b> (Present Simple):<br><i>I like, you like, we like, they like</i><br>но <b>he / she / it</b> + <b>-s</b>: <i>He like<b>s</b>. She play<b>s</b>.</i><br><i>go → goes</i>',
         bank: ['He [likes|like] apples.', 'I [like|likes] cats.', 'She [plays|play] tennis.', 'We [play|plays] football.', 'My mum [drinks|drink] tea.', 'They [go|goes] to school.',
-          'Tom [goes|go] to school.', 'The cat [eats|eat] fish.', 'I [read|reads] books.', 'My sister [sings|sing] songs.', 'You [draw|draws] very well.', 'The dog [runs|run] fast.'],
+          'Tom [goes|go] to school.', 'The cat [eats|eat] fish.', 'I [read|reads] books.', 'My sister [sings|sing] songs.', 'You [draw|draws] very well.', 'The dog [runs|run] fast.',
+          'My dad [works|work] in a hospital.', 'Cats [like|likes] milk.', 'Ann [reads|read] books.', 'I [play|plays] the piano.',
+          'He [swims|swim] very well.', 'We [go|goes] to the park on Sunday.', 'My brother [watches|watch] TV.', 'The bird [sings|sing] in the morning.'],
         make(s) {
           return enGap(s, 'Выбери правильную форму', { small: true, explain: g => /s$/.test(g.answer) ? `<b>${g.full}</b> — он, она, оно → глагол с <b>-s</b>.` : `<b>${g.full}</b> — я, ты, мы, они → глагол <b>без -s</b>.` });
         },
@@ -432,7 +456,13 @@ const EN_WORLDS = [
           ['Is it a cat?', 'Это кошка?', 'Yes, it is.', 'Да.', ['Yes, I do.', 'Yes, I have.']],
           ['Good morning!', 'Доброе утро!', 'Good morning!', 'Доброе утро!', ['Good night!', 'Goodbye!']],
           ['Nice to meet you!', 'Приятно познакомиться!', 'Nice to meet you too!', 'Мне тоже приятно!', ["I'm fine.", 'Bye!']],
-          ['Are you a pupil?', 'Ты ученик?', 'Yes, I am.', 'Да.', ['Yes, I do.', 'Yes, I can.']]],
+          ['Are you a pupil?', 'Ты ученик?', 'Yes, I am.', 'Да.', ['Yes, I do.', 'Yes, I can.']],
+          ["What's this?", 'Что это?', "It's a ball.", 'Это мяч.', ["I'm fine.", 'Yes, I can.']],
+          ['What time is it?', 'Который час?', "It's two o'clock.", 'Два часа.', ["It's red.", "I'm two."]],
+          ['Where is the cat?', 'Где кошка?', "It's under the table.", 'Она под столом.', ['Yes, it is.', "It's a cat."]],
+          ['Do you like milk?', 'Ты любишь молоко?', "No, I don't.", 'Нет, не люблю.', ["No, I can't.", "No, I'm not."]],
+          ['Can you fly?', 'Ты умеешь летать?', "No, I can't.", 'Нет, не умею.', ["No, I don't.", "No, it isn't."]],
+          ["What's your favourite colour?", 'Какой твой любимый цвет?', 'Blue!', 'Синий!', ['Ten!', 'Yes, I do.']]],
         make([q, qru, a, aru, wrong]) {
           return T.choice('Выбери правильный ответ', [a, ...wrong], a, {
             show: `<div class="qbubble">${q}</div>`, say: q, auto: Speech.enOk(), sayAfter: a, label: q,
@@ -447,7 +477,10 @@ const EN_WORLDS = [
           ['I', 'can', 'swim.', 'Я умею плавать.', '🏊'], ['The', 'ball', 'is', 'under', 'the', 'table.', 'Мяч под столом.', '⚽'], ['My', 'name', 'is', 'Tom.', 'Меня зовут Том.', '👦'],
           ['It', 'is', 'a', 'red', 'car.', 'Это красная машина.', '🚗'], ['We', 'are', 'friends.', 'Мы друзья.', '🤝'], ['Can', 'you', 'dance?', 'Ты умеешь танцевать?', '💃'],
           ['I', 'have', 'got', 'a', 'sister.', 'У меня есть сестра.', '👧'], ['My', 'cat', 'is', 'black.', 'Моя кошка чёрная.', '🐱'], ['He', 'likes', 'bananas.', 'Он любит бананы.', '🍌'],
-          ['The', 'sun', 'is', 'yellow.', 'Солнце жёлтое.', '☀️']],
+          ['The', 'sun', 'is', 'yellow.', 'Солнце жёлтое.', '☀️'],
+          ['I', 'can', 'ride', 'a', 'bike.', 'Я умею кататься на велосипеде.', '🚴'], ['We', 'like', 'pizza.', 'Мы любим пиццу.', '🍕'],
+          ['She', 'is', 'my', 'friend.', 'Она моя подруга.', '👧'], ['They', 'have', 'got', 'a', 'cat.', 'У них есть кошка.', '🐱'],
+          ['It', 'is', 'sunny', 'today.', 'Сегодня солнечно.', '☀️'], ['My', 'dad', 'can', 'swim.', 'Мой папа умеет плавать.', '🏊']],
         make(arr) {
           const em = arr[arr.length - 1], ru = arr[arr.length - 2], pieces = arr.slice(0, -2), right = pieces.join(' ');
           let sh; do { sh = U.shuffle(pieces); } while (sh.join(' ') === right);
@@ -456,7 +489,91 @@ const EN_WORLDS = [
       },
     ],
   },
+
+  /* ------------------------------------------------ 9 (3 класс, этап 3 — 20.11.2026) */
+  {
+    id: 'ew9', g3: true, name: 'Городок Тик-Так', emoji: '🏘️', c1: '#FFE082', c2: '#F57F17',
+    boss: { id: 'eb9', name: 'Лис Засоня', emoji: '🦊', hp: 12, story: 'Лис Засоня перевёл все часы в городке и проспал всё на свете. Теперь никто не знает, который час и куда идти! Разбуди его правильными ответами.' },
+    lessons: [
+      {
+        id: 'e_time', title: 'Который час?', icon: '🕒', grade: 3,
+        rule: '<i>What time is it?</i> — Который час?<br><i>It\'s three o\'clock.</i> — Ровно три часа (длинная стрелка на 12).<br><i>It\'s half past three.</i> — Половина четвёртого, 3:30 (длинная стрелка на 6).<br><b>half past</b> — «половина после»: после трёх прошла половина часа.',
+        bank: [[1, 0], [2, 0], [3, 0], [4, 0], [5, 0], [6, 0], [7, 0], [8, 0], [9, 0], [10, 0], [11, 0], [12, 0],
+          [1, 30], [2, 30], [3, 30], [5, 30], [7, 30], [8, 30], [9, 30], [10, 30], [11, 30], [12, 30]],
+        make([h, m]) {
+          const ph = enTime(h, m), dig = enDigital(h, m);
+          const near = [[h, m ? 0 : 30], [h % 12 + 1, m], [(h + 10) % 12 + 1, m], [h % 12 + 1, m ? 0 : 30], [(h + 4) % 12 + 1, m]];
+          const others = []; for (const x of near) { if (others.length < 3 && !others.some(o => o[0] === x[0] && o[1] === x[1])) others.push(x); }
+          const exp = `<b>${ph}</b> — ${dig}${m ? ` (половина ${RU_HALF[h % 12]})` : ''}`;
+          const k = U.rnd(Speech.enOk() ? ['clock', 'clock', 'read', 'listen', 'listen'] : ['clock', 'clock', 'read', 'dig']);
+          if (k === 'clock') return T.choice('What time is it? Выбери ответ', [[h, m], ...others].map(x => opt(enTime(...x))), ph, { pic: VIS.clock(h, m), sayAfter: ph, explain: exp, label: ph });
+          if (k === 'listen') return T.choice('Послушай и выбери время', [[h, m], ...others].map(x => opt(enDigital(...x))), dig, { say: ph, auto: true, explain: exp, label: ph + ' (на слух)' });
+          if (k === 'dig') return T.choice('Как сказать по-английски?', [[h, m], ...others].map(x => opt(enTime(...x))), ph, { show: `<div class="eq">${dig}</div>`, sayAfter: ph, explain: exp, label: dig });
+          return T.choice('Сколько это времени?', [[h, m], ...others].map(x => opt(enDigital(...x))), dig, { show: enWord(ph), say: ph, explain: exp, label: ph + ' (читаем)' });
+        },
+      },
+      {
+        id: 'e_routine', title: 'Мой день', icon: '🌞', grade: 3,
+        rule: '<i>⏰ get up — вставать, 🪥 brush my teeth — чистить зубы, 🍳 have breakfast — завтракать, 🏫 go to school — идти в школу, 📝 do homework — делать уроки, 🛌 go to bed — ложиться спать</i><br><i>I get up at seven o\'clock.</i> — Я встаю в семь часов. (<b>at</b> + время)',
+        bank: [...repeatTo(V.routine, 12), ...EN_ROUTINE_S],
+        make(item) {
+          if (item.length > 3) {
+            const em = item[item.length - 1], ru = item[item.length - 2], pieces = item.slice(0, -2), right = pieces.join(' ');
+            let sh; do { sh = U.shuffle(pieces); } while (sh.join(' ') === right);
+            return { kind: 'order', join: ' ', prompt: 'Составь предложение', pic: em, show: ruWord(ru), pieces: sh, answers: [right], sayAfter: right, explain: `<b>${right}</b> — ${ru}`, label: right };
+          }
+          return vocabTask(item, V.routine);
+        },
+      },
+      {
+        id: 'e_days', title: 'Дни недели', icon: '📅', grade: 3,
+        rule: '<i>Monday</i> — понедельник, <i>Tuesday</i> — вторник, <i>Wednesday</i> — среда, <i>Thursday</i> — четверг, <i>Friday</i> — пятница, <i>Saturday</i> — суббота, <i>Sunday</i> — воскресенье.<br>Дни недели в английском всегда пишутся с <b>большой буквы</b>!',
+        bank: [0, 1, 2, 3, 4, 5, 6, 0, 1, 2, 3, 4, 5, 6],
+        make(i) {
+          const [en, ru] = EN_DAYS[i], others = U.sample(EN_DAYS.filter((_, k) => k !== i), 3);
+          const exp = `<b>${en}</b> — ${ru}`;
+          const k = U.rnd(['ruEn', 'enRu', 'after', 'before', ...(Speech.enOk() ? ['listen'] : [])]);
+          if (k === 'ruEn') return T.choice('Переведи на английский', [en, ...others.map(x => x[0])], en, { show: ruWord(ru), sayAfter: en, explain: exp, label: en });
+          if (k === 'enRu') return T.choice('Что значит это слово?', [[en, ru], ...others].map(x => opt(x[0], x[1])), en, { show: enWord(en), say: en, explain: exp, label: en + ' (перевод)' });
+          if (k === 'listen') return T.choice('Послушай и выбери день', [en, ...others.map(x => x[0])], en, { say: en, auto: true, explain: exp, label: en + ' (на слух)' });
+          const after = k === 'after', j = after ? (i + 6) % 7 : (i + 1) % 7;   // j — день, от которого считаем
+          return T.choice(`What day comes <b>${after ? 'after' : 'before'}</b> ${EN_DAYS[j][0]}?`, [en, ...others.map(x => x[0])], en, {
+            say: `What day comes ${after ? 'after' : 'before'} ${EN_DAYS[j][0]}?`, sayAfter: en, label: `${after ? 'после' : 'перед'} ${EN_DAYS[j][0]}`,
+            explain: `${after ? `${EN_DAYS[j][0]} → <b>${en}</b>` : `<b>${en}</b> → ${EN_DAYS[j][0]}`} (${after ? EN_DAYS[j][1] + ' → ' + ru : ru + ' → ' + EN_DAYS[j][1]}).`,
+          });
+        },
+      },
+      {
+        id: 'e_town', title: 'Мой город', icon: '🏙️', grade: 3,
+        rule: '<i>🏪 shop, 🏞️ park, 🏥 hospital, ☕ cafe, 🎬 cinema, 📚 library, 🏤 post office, 🚏 bus stop, 🌉 bridge, 🏛️ museum</i><br><b>There is</b> — есть (один): <i>There is a park.</i><br><b>There are</b> — есть (много): <i>There are two shops.</i>',
+        bank: [...repeatTo(V.town, 13), 'There [is|are] a park in my town.', 'There [are|is] two shops in the street.', 'There [is|are] a cinema near the park.',
+          'There [are|is] many cars in the street.', 'There [is|are] a bridge over the river.', 'There [are|is] three buses at the bus stop.',
+          'There [is|are] a cafe next to the museum.', 'There [are|is] a lot of books in the library.'],
+        make(item) {
+          if (typeof item === 'string') {
+            return enGap(item, 'Выбери: <b>is</b> или <b>are</b>?', { small: true, explain: g => g.answer === 'is' ? `<b>${g.full}</b> — один предмет → <b>there is</b>.` : `<b>${g.full}</b> — много предметов → <b>there are</b>.` });
+          }
+          return vocabTask(item, V.town);
+        },
+      },
+    ],
+  },
 ];
+
+const EN_DAYS = [['Monday', 'понедельник'], ['Tuesday', 'вторник'], ['Wednesday', 'среда'], ['Thursday', 'четверг'], ['Friday', 'пятница'], ['Saturday', 'суббота'], ['Sunday', 'воскресенье']];
+const RU_HALF = ['первого', 'второго', 'третьего', 'четвёртого', 'пятого', 'шестого', 'седьмого', 'восьмого', 'девятого', 'десятого', 'одиннадцатого', 'двенадцатого'];
+const enTime = (h, m) => m === 30 ? `It's half past ${NUM[h]}.` : `It's ${NUM[h]} o'clock.`;
+const enDigital = (h, m) => `${h}:${String(m).padStart(2, '0')}`;
+/* Игра «поставь стрелки» (MathFun.clockTask) с английской фразой — для EnFun */
+function enClockTask([h, m]) {
+  const ph = enTime(h, m);
+  return {
+    kind: 'mf', mf: 'clock', h, m, h0: 12, m0: 0, tol: 10, answer: String(m || h), label: '⏰ ' + ph,
+    prompt: `⏰ Поставь стрелки: <b>${ph}</b>`, say: ph, auto: true,
+    explain: `<b>${ph}</b> — ${enDigital(h, m)}. ${m ? 'Длинная стрелка на 6, короткая — между ' + h + ' и ' + (h % 12 + 1) : 'Длинная стрелка на 12, короткая — на ' + h}.`,
+    hint: 'Короткая стрелка — часы, длинная (красная) — минуты. o\'clock — длинная на 12, half past — длинная на 6.',
+  };
+}
 
 /* Числа: прочитай / послушай → набери цифрами; цифра → слово */
 function numTask(n, lo, hi) {

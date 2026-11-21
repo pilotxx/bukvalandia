@@ -4,7 +4,7 @@
    ============================================================ */
 
 const KEY = 'bukvalandia_v1';   // ключ хранилища не меняем: в нём прогресс ребёнка
-const VERSION = 6;
+const VERSION = 7;   // 7 — с версии программы 16 (6 занимала линия Codex на GitHub)
 const LESSON_LEN = 10;
 let S = null;               // состояние
 let TAB = 'map';
@@ -24,12 +24,10 @@ function defaults() {
   return {
     v: VERSION, created: Date.now(), name: '', onboarded: false, subject: 'ru', seenSubjects: {},
     coins: 0, earned: 0, xp: 0,
-    stars: {}, stats: {}, bosses: {},
+    stars: {}, stats: {}, bosses: {}, weakKnown: {},
     history: {}, streak: { last: '', count: 0, best: 0 }, bestCombo: 0,
     pet: { species: 'dragon', name: '', color: null, hat: null, glasses: null, neck: null, body: null, feet: null, back: null, costume: null, satiety: 70, tick: Date.now(), stageSeen: 0, maxStage: 0, microSeen: 0 },
     owned: { th_sky: true, ball: true }, food: {}, hidden: {},
-    house: { room: 'living', placements: {}, positions: {}, quests: {}, album: {}, skills: {}, building: [], painting: [], melody: [], aquarium: {fish:['🐠','🐟'],water:0}, play: {}, gallery: {}, routines: {}, questDrafts: {}, playVersion: 11 },
-    payments: [],
     room: { pos: {} }, costumes: {}, memoSeen: {}, riddle: { day: '', n: 0 }, greetDay: '',
     piggy: { goal: null, saved: 0 },
     gameProg: {},
@@ -40,9 +38,15 @@ function defaults() {
     records: { balloons: 0, memory: 0 },
     settings: { sound: true, tts: true, petVoice: true, dailyLimit: 700, breakMin: 20, openAll: false, sleepFrom: 21, piggyShare: 50, autoBackup: true },
     parent: {
-      pin: null, requests: [],
+      pin: null, requests: [], coinLog: [],
       prizes: [{ id: 'p1', name: 'Выбрать десерт на ужин', price: 1000 }, { id: 'p2', name: '30 минут мультиков', price: 1500 }, { id: 'p3', name: 'Поход в кино', price: 6000 }],
     },
+    giftNews: [],
+    /* этап 4: двор, желания, память, коллекции, раскраски, сказки (js/yard.js) */
+    life: { beds: [], wDay: '', wishes: [], allDay: '', petDay: '', mem: [], memInit: false, coll: {}, shows: {}, art: {}, artLast: '',
+      findDay: '', finds: 0, appleDay: '', snow: { day: '', n: 0 }, lessonAt: 0, lessonDay: '', yardVisits: 0 },
+    /* этап 5: награды за главных боссов (js/bigrew.js): школа питомца, путешествие, свой остров */
+    big: { seen: {}, opened: {}, school: { pts: 0, n: 0 }, trip: { done: {}, best: {}, all: 0, greet: 0 }, isl: { size: 0, cells: {}, store: {}, built: 0, spent: 0 } },
     lastBackup: 0, lastAutoDay: '', limitToast: '',
   };
 }
@@ -56,16 +60,12 @@ function merge(d, o) {
 function load() {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) {
-      const previous = JSON.parse(raw);
-      if ((previous.v || 1) < 6) {
-        try { if (!localStorage.getItem(KEY + '_before_v6')) localStorage.setItem(KEY + '_before_v6', raw); } catch (e) { /* Основной прогресс остаётся на прежнем месте. */ }
-      }
-      if (previous.onboarded && (previous.house?.playVersion || 0) < 11) {
-        try { if (!localStorage.getItem(KEY + '_before_v11')) localStorage.setItem(KEY + '_before_v11', raw); } catch (e) { /* Основное сохранение остаётся доступно. */ }
-      }
-      S = merge(defaults(), previous);
-    } else S = defaults();
+    const prev = raw ? JSON.parse(raw) : null;
+    /* перед первым запуском новой версии — нетронутая копия прежнего сохранения (идея из версии Codex) */
+    if (prev && (prev.v || 1) < VERSION) {
+      try { if (!localStorage.getItem(KEY + '_before_v16')) localStorage.setItem(KEY + '_before_v16', raw); } catch (e) { /* основное сохранение не трогаем */ }
+    }
+    S = prev ? merge(defaults(), prev) : defaults();
   } catch (e) { S = defaults(); }
   migrate();
 }
@@ -95,7 +95,7 @@ function migrate() {
     ALL_WORLDS.forEach(w => { if (S.bosses[w.id]) S.owned['boss_' + w.boss.id] = true; });
   }
   S.v = VERSION;
-  House.migrate();
+  if (typeof Life !== "undefined") Life.init();   // двор и память питомца: грядки, «воспоминания» о побеждённых боссах
 }
 let RESETTING = false;      // идёт сброс прогресса — больше ничего не сохранять (иначе автосохранение вернёт старое)
 function save() {
@@ -335,7 +335,12 @@ function addMistake(l, i, label) {
   const m = S.mistakes.find(x => x.l === l && x.i === i);
   if (m) { m.n++; m.t = Date.now(); m.label = label; }
   else S.mistakes.push({ l, i, n: 1, t: Date.now(), label });
-  if (S.mistakes.length > 80) { S.mistakes.sort((a, b) => b.n - a.n || b.t - a.t); S.mistakes.length = 80; }
+  /* список полон — убираем самые редкие и старые, но только что сделанная ошибка остаётся всегда */
+  if (S.mistakes.length > 80) {
+    const cur = m || S.mistakes[S.mistakes.length - 1];
+    S.mistakes.sort((a, b) => b.n - a.n || b.t - a.t);
+    S.mistakes = [cur, ...S.mistakes.filter(x => x !== cur)].slice(0, 80);
+  }
 }
 function fixMistake(l, i) {
   const k = S.mistakes.findIndex(x => x.l === l && x.i === i);
@@ -351,7 +356,6 @@ function fixMistake(l, i) {
    ОКНА, ТОСТЫ, КОНФЕТТИ
    ============================================================ */
 function modal({ html, buttons = [{ label: 'Хорошо', cls: 'primary' }], cls = '', onClose, dismiss = true }) {
-  $('#petSay')?.classList.remove('show');
   const wrap = document.createElement('div');
   wrap.className = 'modal-wrap';
   wrap.innerHTML = `<div class="modal ${cls}" role="dialog">${html}<div class="modal-btns">${buttons.map((b, i) => `<button class="btn ${b.cls || ''}" data-mb="${i}">${b.label}</button>`).join('')}</div></div>`;
@@ -367,6 +371,8 @@ function modal({ html, buttons = [{ label: 'Хорошо', cls: 'primary' }], cl
     setTimeout(flushQueue, 220);
   };
   wrap.addEventListener('click', ev => {
+    /* окно уже закрывается: второе быстрое нажатие не должно повторить покупку */
+    if (closed) return;
     const b = ev.target.closest('[data-mb]');
     if (b) {
       Sound.play('tap');
@@ -510,13 +516,14 @@ function renderMap() {
   if (backupDue) h += `<button class="banner warn" data-act="parent" data-arg="backup">🛟 Пора сохранить прогресс — позови взрослого</button>`;
   const ready = readyMistakes(subj), allM = subjMistakes(subj);
   if (ready.length) {
-    h += `<button class="fix-card" data-act="fix"><span class="fix-ic">🩹</span><span><b>Работа над ошибками</b><small>Готово к исправлению: ${ready.length} · +8 <i class="ci"></i> за каждую</small></span><span class="go">›</span></button>`;
+    h += `<button class="fix-card" data-act="fix"><span class="fix-pet">${petSVG({ uid: 'fx', mood: 'wow' })}</span><span><b>Питомец зовёт: исправим ошибки!</b><small>Готово к исправлению: ${ready.length} · +8 <i class="ci"></i> за каждую${day().fixBonus ? '' : ' · все исправишь — ещё +25'}</small></span><span class="go">›</span></button>`;
   } else if (allM.length) {
     h += `<div class="fix-card wait"><span class="fix-ic">🌙</span><span><b>Работа над ошибками</b><small>Сегодняшние ошибки (${allM.length}) можно будет исправить завтра — так они лучше запомнятся</small></span></div>`;
   }
   if (subj.id === 'math') h += mulCard();
   subj.worlds.forEach(w => {
     const wi = w.wi;
+    if (w.g3 && !(subj.worlds[wi - 1] || {}).g3) h += `<div class="map-grade">🎒 <b>3 класс</b> — новые миры после главного босса</div>`;
     const open = worldOpen(w);
     const got = w.lessons.reduce((a, l) => a + (S.stars[l.id] || 0), 0) + (S.bosses[w.id] ? 3 : 0);
     const max = w.lessons.length * 3 + 3;
@@ -546,7 +553,7 @@ function renderMap() {
       <div class="whead"><span class="wemoji">${w.emoji}</span><div><small>Мир ${wi + 1}</small><h3>${w.name}</h3></div><span class="wstars">⭐ ${got}/${max}</span></div>
       ${open ? '' : `<div class="wlock">🔒 Победи босса «${prevWorld(w).boss.name}», чтобы открыть этот мир</div>`}
       <div class="path" style="height:${H}px"><svg viewBox="0 0 100 ${H}" preserveAspectRatio="none"><path d="${path}" vector-effect="non-scaling-stroke"/></svg>${nodes}</div>
-    </section>`;
+    </section>${BigRew.mapCard(w)}`;
   });
   h += `<div class="map-end">${subj.id === 'math' ? '🌆' : '🏰'} Конец пути… пока что!</div></div>`;
   return h;
@@ -600,8 +607,7 @@ function openBossSheet(wid) {
   modal({
     cls: 'sheet',
     html: `<div class="boss-intro"><div class="boss-face">${w.boss.emoji}</div><h2>${w.boss.name}</h2><p>${w.boss.story}</p>
-      <div class="goals"><span>❤️ У тебя 3 жизни</span><span>💥 Здоровье босса: ${w.boss.hp}</span><span>🐾 Помощь напарника</span></div>
-      ${Battle.intro(w)}
+      <div class="goals"><span>❤️ У тебя 3 жизни</span><span>💥 Здоровье босса: ${w.boss.hp}</span><span>🚫 Без подсказок</span></div>
       ${!ready ? `<div class="need"><b>Чтобы сразиться, получи по 2 звезды в темах:</b>${need.map(l => `<div>${l.icon} ${l.title} — ${'★'.repeat(S.stars[l.id] || 0)}${'☆'.repeat(2 - Math.min(2, S.stars[l.id] || 0))}</div>`).join('')}</div>` : ''}
       ${won ? `<p class="note">Этот босс уже побеждён. Можно сразиться снова ради тренировки — монет будет ${Math.round(br.f * 100)}%.</p>` : `<p class="reward">Награда: ${150 + 60 * wi} <i class="ci"></i>${w.subject.worlds[wi + 1] ? ' и новый мир!' : ''}</p>`}</div>`,
     buttons: ready ? [{ label: 'Не сейчас', cls: 'ghost' }, { label: 'В бой! ⚔️', cls: 'primary big', onClick: () => startSession('boss', wid) }] : [{ label: 'Понятно', cls: 'primary' }],
@@ -614,7 +620,7 @@ function openBossSheet(wid) {
 function makeTask(lid, i) {
   const les = LESSONS[lid];
   try {
-    const t = MathFun.transform(RuFun.transform(les.make(les.bank[i]), les, i), les, i);   // русский и математика: часть заданий — игровые
+    const t = EnFun.transform(MathFun.transform(RuFun.transform(les.make(les.bank[i]), les, i), les, i), les, i);   // часть заданий — игровые (русский, математика, английский)
     t.lid = lid; t.idx = i;
     return t;
   } catch (e) { console.error('Ошибка генерации', lid, i, e); return null; }
@@ -665,6 +671,8 @@ function mulTasks(n) {
 function bossTasks(w, n) {
   const out = [];
   while (out.length < n) {
+    /* примерно каждое пятое задание боя — «выбери все верные» (не два подряд) */
+    if (out.length && Math.random() < 0.2 && out[out.length - 1].t.kind !== 'multi') { const m = Multi.make(w); if (m) { out.push({ t: m }); continue; } }
     const les = U.rnd(w.lessons);
     const t = makeTask(les.id, Math.floor(Math.random() * les.bank.length));
     if (t && !out.some(x => x.t.label === t.label)) out.push({ t });
@@ -672,6 +680,7 @@ function bossTasks(w, n) {
   return out;
 }
 function startSession(mode, ref) {
+  if (L || $('#lesson')) return;    // двойное нажатие «Начать» / «В путь» — второй урок поверх первого не открываем
   Sound.init();
   let queue = [], world = null, subject = null, factor = 1;
   GEN.boost = 0;
@@ -693,12 +702,12 @@ function startSession(mode, ref) {
     queue = list.map(m => ({ t: makeTask(m.l, m.i), fix: true })).filter(x => x.t);
     if (!queue.length) return;
   }
-  if (mode === 'quest') {
-    const quest = QUESTS.find(q => q.id === ref);
-    if (!quest) return;
-    subject = SUBJ[quest.subject];
-    queue = Quest.tasks(ref);
-    factor = rewardInfo('quest:' + ref, 2).f;
+  if (mode === 'trip') {
+    /* путешествие (награда за Биг-Бена): сценки + задания сложнее обычных, без подсказок */
+    subject = SUBJ.en;
+    GEN.boost = 1;
+    queue = Trip.tasks(ref);
+    factor = rewardInfo('trip_' + ref, S.big.trip.done[ref] ? 2 : 1).f;
   }
   if (mode === 'mul') {
     subject = SUBJ.math;
@@ -712,18 +721,18 @@ function startSession(mode, ref) {
     hp: world && mode === 'boss' ? world.boss.hp : 0, hpMax: world && mode === 'boss' ? world.boss.hp : 0, hearts: 3,
     start: Date.now(), fastWrong: 0, petMul: petBonusMul(), mulStart: mode === 'mul' ? mulLearned() : 0,
   };
-  if (mode === 'quest') Quest.restore();
   const ov = document.createElement('div');
   ov.className = 'overlay lesson-ov';
   ov.id = 'lesson';
-  ov.style.setProperty('--c1', world ? world.c1 : mode === 'mul' ? '#C3A6FF' : '#FF9EC4');
-  ov.style.setProperty('--c2', world ? world.c2 : mode === 'mul' ? '#8A5CF6' : '#E8569A');
+  if (mode === 'trip') { ov.style.setProperty('--c1', TRIP[ref].c1); ov.style.setProperty('--c2', TRIP[ref].c2); }
+  else ov.style.setProperty('--c1', world ? world.c1 : mode === 'mul' ? '#C3A6FF' : '#FF9EC4');
+  if (mode !== 'trip') ov.style.setProperty('--c2', world ? world.c2 : mode === 'mul' ? '#8A5CF6' : '#E8569A');
   if (mode === 'boss') ov.classList.add('boss-ov');
   ov.innerHTML = `<div class="l-top"><button class="x" data-act="quit" aria-label="Выйти">✕</button>
       ${mode === 'boss' ? Boss.topHTML(world) : `<div class="l-progress"><div id="lProg"></div></div>`}
       <div class="combo" id="combo"></div></div>
     ${mode === 'lesson' ? RuFun.blotHTML(world) : ''}${mode === 'boss' ? Boss.arenaHTML(world) : ''}
-    <div class="l-title">${mode === 'lesson' ? LESSONS[ref].icon + ' ' + LESSONS[ref].title : mode === 'boss' ? '⚔️ Бой: ' + world.boss.name : mode === 'mul' ? '✖️ Тренажёр таблицы умножения' : mode === 'quest' ? QUESTS.find(q => q.id === ref).icon + ' ' + QUESTS.find(q => q.id === ref).title : '🩹 Работа над ошибками'}${L.factor < 1 ? ` <span class="fresh-tag">монеты ${Math.round(L.factor * 100)}%</span>` : ''}</div>
+    <div class="l-title">${mode === 'lesson' ? LESSONS[ref].icon + ' ' + LESSONS[ref].title : mode === 'boss' ? '⚔️ Бой: ' + world.boss.name : mode === 'mul' ? '✖️ Тренажёр таблицы умножения' : mode === 'trip' ? '✈️ ' + TRIP[ref].name : '🩹 Работа над ошибками'}${L.factor < 1 ? ` <span class="fresh-tag">монеты ${Math.round(L.factor * 100)}%</span>` : ''}</div>
     <div class="l-body" id="lBody"></div>
     <div class="l-foot" id="lFoot"></div>
     ${mode === 'boss' ? Boss.petHTML() : ''}
@@ -732,18 +741,17 @@ function startSession(mode, ref) {
   document.body.classList.add('no-scroll');
   Back.push(() => { askQuit(); return false; });
   if (mode === 'boss') Boss.start();
-  if (mode === 'quest' && L.pos >= L.queue.length) { Quest.finish(); return; }
   showTask();
+  if (mode === 'fix') Speech.sayPet('Смотри, вот ошибки. Давай исправим их вместе!', petStage());
 }
 function askQuit() {
   if (!L) return;
   if (L.finished) { closeLesson(); Back.done(); return; }
-  if (L.mode === 'boss' && L.defeating && L.hp <= 0) { Boss.cancel(L); finishBoss(true); return; }
-  if (L.mode === 'quest') { Quest.capture(); confirmBox('<h2>Продолжим позже?</h2><p>Путь сохранится.</p>', 'В домик', () => { Back.done(); TAB = 'pet'; closeLesson(); }, 'Остаться'); return; }
   confirmBox('<div class="m-icon">🚪</div><h2>Выйти?</h2><p>Если выйти сейчас, звёзды и монеты за этот урок не начислятся.</p>', 'Выйти', () => { Back.done(); closeLesson(); }, 'Остаться');
 }
 function closeLesson() {
-  if (L?.mode === 'boss') Boss.cancel(L);
+  /* бой: если босс так и не вернул украденную монетку — она возвращается при выходе (без бонуса) */
+  if (L && L.stolen) { S.coins += L.stolen; L.stolen = 0; save(); }
   if (L && !L.finished) {
     const d = day();
     d.time += Math.min(30 * 60000, Date.now() - L.start);
@@ -764,7 +772,6 @@ function curTask() { return L.queue[L.pos]; }
 function showTask() {
   if (L.mode === 'boss') Boss.prepTask();
   const e = curTask(), t = e.t;
-  const restoredHint = L.mode === 'quest' && S.house.questDrafts?.[L.ref]?.pos === L.pos && S.house.questDrafts[L.ref].stepHint;
   L.answered = false; L.hint = false; L.shown = Date.now(); L.ord = []; L.typed = '';
   const body = $('#lBody');
   if (L.mode !== 'boss') $('#lProg').style.width = (100 * L.pos / L.queue.length) + '%';
@@ -773,7 +780,7 @@ function showTask() {
   else if (t.kind === 'input') show = `<div class="mshow">${t.show.replace('[?]', '<span class="inbox" id="inbox"></span>')}</div>`;
   else if (t.show) show = `<div class="${t.small ? 'sentence' : t.show.startsWith('<div') || t.show.startsWith('<svg') ? 'mshow' : 'word'}">${t.show}</div>`;
   /* картинка и кнопки «послушать» (английский) */
-  const canSay = !!t.say && Speech.canSayEn(t.say);
+  const canSay = !!t.say && Speech.enOk();
   if (t.pic || canSay) {
     show = `<div class="en-show">${t.pic ? `<div class="pic">${t.pic}</div>` : ''}${show}
       ${canSay ? '<div class="say-row"><button class="big-say" data-act="sayEn" aria-label="Послушать">🔊</button><button class="slow-say" data-act="sayEnSlow" aria-label="Медленно">🐢</button></div>' : ''}</div>`;
@@ -793,45 +800,44 @@ function showTask() {
   } else if (t.kind === 'tap') {
     ans = `<div class="tapline">${t.tokens.map((w, i) => `<button class="tw" data-act="ans" data-arg="${i}">${U.esc(w)}</button>`).join('')}</div>`;
   } else if (t.kind === 'order') {
-    ans = `<div class="ord-line ${t.join === '' ? 'letters' : ''}" id="ordLine"><span class="ph">${t.join === '' ? 'Нажимай на буквы по порядку' : 'Нажимай на слова по порядку'}</span></div>
+    ans = `<div class="ord-line ${t.join === '' ? 'letters' : ''}" id="ordLine"><span class="ph">${t.ph || (t.join === '' ? 'Нажимай на буквы по порядку' : 'Нажимай на слова по порядку')}</span></div>
       <div class="ord-pool ${t.join === '' ? 'letters' : ''}" id="ordPool">${t.pieces.map((p, i) => `<button class="piece" data-act="ordAdd" data-arg="${i}">${U.esc(p)}</button>`).join('')}</div>`;
   }
-  if (t.kind === 'scene') ans = SceneTasks.html(t);
-  else if (t.kind === 'multi') ans = Quest.multiHTML(t);
+  if (t.kind === 'multi') ans = Multi.html(t);
   else if (t.kind === 'mf') ans = MathFun.html(t);
+  else if (t.kind === 'ef') ans = EnFun.html(t);
   else if (t.ui) ans = RuFun.html(t);
   body.innerHTML = `${e.retry ? '<div class="retry-tag">🔁 Исправь ошибку</div>' : e.fromMistake || e.fix ? '<div class="retry-tag fix">🩹 Повторение</div>' : ''}
-    ${L.mode === 'quest' ? Quest.hud() : ''}
     <div class="prompt"><span>${t.prompt}</span>${Speech.available() && S.settings.tts ? `<button class="say" data-act="say" aria-label="Прочитать вслух">🔊</button>` : ''}</div>
     ${show}<div class="ans">${ans}</div><div class="hintbox" id="hintbox"></div>`;
   body.scrollTop = 0;
-  if (t.kind === 'scene') SceneTasks.bind(t, body);
-  else if (t.kind === 'multi') Quest.multiBind(t, body);
+  if (t.kind === 'multi') Multi.bind(t, body);
   else if (t.kind === 'mf') MathFun.bind(t, body);
+  else if (t.kind === 'ef') EnFun.bind(t, body);
   else if (t.ui) RuFun.bind(t, body);
   body.classList.remove('enter'); void body.offsetWidth; body.classList.add('enter');
   if (canSay && t.auto) setTimeout(() => { if (L && L.queue[L.pos] === e && !L.answered) Speech.sayEn(t.say); }, 450);
   const foot = $('#lFoot');
-  foot.innerHTML = `${L.mode !== 'boss' ? '<button class="btn hint" data-act="hint">💡 Подсказка</button>' : ''}
+  foot.innerHTML = `${L.mode !== 'boss' && L.mode !== 'trip' ? '<button class="btn hint" data-act="hint">💡 Подсказка</button>' : ''}
     ${t.kind === 'order' ? '<button class="btn primary" data-act="ordCheck" id="ordCheck" disabled>Проверить</button>' : ''}`;
   $('#fb').className = 'feedback';
   if (L.mode === 'boss') Boss.onTask(e);
-  if (restoredHint) { useHint(); L.hints--; }
-  if (L.mode === 'quest') Quest.capture();
 }
+/* Дробь 1/3 вслух — «одна третья» (иначе прочтётся «13») */
+const frSay = s => String(s || '').replace(/<span class="frac"><b>(\d+)<\/b><i>(\d+)<\/i><\/span>/g, (m, a, b) => ' ' + (FR_NAME[b] || a + ' из ' + b).replace(/ \(.*/, '') + ' ');
 function sayTask() {
   const t = curTask().t;
   let extra = '';
   if (L.subject && L.subject.id === 'math' && t.show) {
     const div = document.createElement('div');
-    div.innerHTML = t.show;
+    div.innerHTML = frSay(t.show);
     div.querySelectorAll('svg,.b10,.tenf,.grp').forEach(x => x.remove());
     extra = div.textContent.replace(/(\d{1,2}):(\d{2})/g, '$1 $2').replace(/\[\?\]|\?/g, ' сколько ').replace(/·/g, ' умножить на ')
       .replace(/ : /g, ' разделить на ').replace(/−/g, ' минус ').replace(/\+/g, ' плюс ').replace(/=/g, ' равно ').replace(/○/g, ' ').replace(/\bx\b/g, ' икс ');
   } else if (t.small && t.show && !(L.subject && L.subject.id === 'en')) extra = t.show;
   const plain = t.prompt.replace(/<[^>]+>/g, '');
   if (L.subject && L.subject.id === 'en' && !/[а-яё]/i.test(plain) && Speech.enOk()) { Speech.sayEn(plain); return; }
-  Speech.say(t.prompt + (extra ? '. ' + extra : ''));
+  Speech.say(frSay(t.prompt) + (extra ? '. ' + extra : ''));
 }
 
 /* ---------- Подсказка ---------- */
@@ -839,7 +845,6 @@ function useHint() {
   if (!L || L.answered || L.hint) return;
   const e = curTask(), t = e.t;
   L.hint = true; L.hints++;
-  if (L.mode === 'boss') Battle.hintUsed();
   Sound.play('tap');
   if (t.kind === 'choice' && t.options.length >= 3) {
     const wrong = $$('#lBody .opt').filter(b => b.dataset.arg !== String(t.answer) && !b.disabled);
@@ -862,15 +867,14 @@ function useHint() {
     ? `<div class="hint-card"><b>💡 Подсказка:</b> ${t.hint}</div>`
     : `<div class="hint-card"><b>💡 Правило:</b> ${les ? les.rule : ''}</div>`;
   $('#hintbox').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  const hb = $('[data-act="hint"]'); if (hb) { hb.disabled = true; hb.textContent = '💡 Подсказка открыта'; }
-  if (L.mode === 'quest') Quest.capture();
+  const hb = $('[data-act="hint"]'); if (hb) { hb.disabled = true; hb.textContent = '💡 Подсказка взята (награда меньше)'; }
 }
 
 /* ---------- Составление предложения ---------- */
 function renderOrder() {
   const t = curTask().t;
   const line = $('#ordLine'), pool = $('#ordPool');
-  line.innerHTML = L.ord.length ? L.ord.map((i, k) => `<button class="piece in" data-act="ordDel" data-arg="${k}">${U.esc(t.pieces[i])}</button>`).join('') : `<span class="ph">${t.join === '' ? 'Нажимай на буквы по порядку' : 'Нажимай на слова по порядку'}</span>`;
+  line.innerHTML = L.ord.length ? L.ord.map((i, k) => `<button class="piece in" data-act="ordDel" data-arg="${k}">${U.esc(t.pieces[i])}</button>`).join('') : `<span class="ph">${t.ph || (t.join === '' ? 'Нажимай на буквы по порядку' : 'Нажимай на слова по порядку')}</span>`;
   $$('.piece', pool).forEach(b => { b.classList.toggle('used', L.ord.includes(+b.dataset.arg)); });
   $('#ordCheck').disabled = L.ord.length !== t.pieces.length;
 }
@@ -880,12 +884,11 @@ function answer(val) {
   if (!L || L.answered) return;
   const e = curTask(), t = e.t;
   let ok;
-  if (t.kind === 'scene') ok = val === 'ok';
-  else if (t.kind === 'choice' || t.kind === 'multi') ok = String(val) === String(t.answer);
+  if (t.kind === 'choice') ok = String(val) === String(t.answer);
   else if (t.kind === 'stress' || t.kind === 'tap') ok = +val === t.answer;
   else if (t.kind === 'order') ok = t.answers.includes(L.ord.map(i => t.pieces[i]).join(t.join ?? ' '));
   else if (t.kind === 'input') ok = String(Number(val)) === String(Number(t.answer));
-  else if (RuFun.KINDS.includes(t.kind) || MathFun.KINDS.includes(t.kind)) ok = val === 'ok';
+  else if (Multi.KINDS.includes(t.kind) || RuFun.KINDS.includes(t.kind) || MathFun.KINDS.includes(t.kind) || EnFun.KINDS.includes(t.kind)) ok = val === 'ok';
   L.answered = true;
   const fast = Date.now() - L.shown < 1300;
   const d = day();
@@ -946,7 +949,7 @@ function answer(val) {
       if (L.mode === 'fix') { gain = 8; }
       else if (L.mode === 'mul') { gain = Math.max(1, Math.round((L.hint ? 2 : 5) * L.factor)); }
       else {
-        const base = L.hint ? 4 : 10 + (L.world ? L.world.wi : 0);
+        const base = L.hint ? 4 : L.mode === 'trip' ? 14 : 10 + (L.world ? L.world.wi : 0);
         const mult = L.combo >= 10 ? 2 : L.combo >= 5 ? 1.5 : 1;
         gain = Math.max(1, Math.round(base * mult * L.factor));
       }
@@ -966,8 +969,8 @@ function answer(val) {
     if (t.lid) addMistake(t.lid, t.idx, t.label);
     if (L.mode === 'boss') Boss.wrong();
     else if (!e.retry || e.retryCount < 2) {
-      const nt = L.mode === 'mul' ? mulTask(e.mul[0], e.mul[1]) : t.qid ? JSON.parse(JSON.stringify(t)) : makeTask(t.lid, t.idx);
-      if (nt) L.queue.push({ t: nt, retry: true, retryCount: (e.retryCount || 0) + 1, fix: e.fix, mul: e.mul });
+      const nt = L.mode === 'mul' ? mulTask(e.mul[0], e.mul[1]) : e.remake ? e.remake() : makeTask(t.lid, t.idx);
+      if (nt) L.queue.push({ t: nt, retry: true, retryCount: (e.retryCount || 0) + 1, fix: e.fix, mul: e.mul, remake: e.remake });
     }
     Sound.play('wrong');
     if (fast) { L.fastWrong++; if (L.fastWrong >= 2) { toast('🐢 Не спеши! Сначала подумай, потом нажимай.'); L.fastWrong = 0; } }
@@ -977,7 +980,7 @@ function answer(val) {
   const titles = ok ? (L.mode === 'boss' && L.lastCrit ? ['Суперудар! 💥'] : e.shield ? ['Щит разбит! 🛡️'] : e.retry ? ['Исправлено! 👏'] : ['Верно!', 'Молодец!', 'Отлично!', 'Правильно!', 'Здорово!']) : ['Не совсем…', 'Ошибочка!', 'Почти!'];
   const fb = $('#fb');
   fb.innerHTML = `<div class="fb-in"><div class="fb-h"><span class="fb-ic">${ok ? '✅' : '🧐'}</span><b>${U.rnd(titles)}</b>${gain ? `<span class="fb-coins">+${gain} <i class="ci"></i></span>` : ''}</div>
-    ${exp ? ((L.mode === 'quest' || L.mode === 'boss') ? `<details class="fb-reason"><summary>💡 Почему?</summary><div class="fb-exp">${exp}</div></details>` : `<div class="fb-exp">${exp}</div>`) : ''}
+    ${exp ? `<div class="fb-exp">${exp}</div>` : ''}
     <button class="btn ${ok ? 'primary' : 'warm'} big" data-act="next">${ok ? 'Дальше' : 'Понятно'}</button></div>`;
   const fbCls = 'feedback show ' + (ok ? 'ok' : 'bad');
   if (L.mode !== 'boss') fb.className = fbCls;
@@ -988,8 +991,6 @@ function answer(val) {
   const after = t.sayAfter || t.say;
   if (after && Speech.enOk()) setTimeout(() => Speech.sayEn(after), ok ? 350 : 700);
   const hb = $('[data-act="hint"]'); if (hb) hb.disabled = true;
-  if (L.mode === 'boss') Battle.afterAnswer();
-  if (L.mode === 'quest') Quest.capture();
   save();
 }
 function renderCombo() {
@@ -1010,7 +1011,7 @@ function next() {
     if (L.pos + 1 >= L.queue.length) L.queue.push(...bossTasks(L.world, 5));
   }
   L.pos++;
-  if (L.pos >= L.queue.length) return finishLesson();
+  if (L.pos >= L.queue.length) return L.mode === 'trip' ? Trip.finish() : finishLesson();
   showTask();
 }
 
@@ -1048,16 +1049,20 @@ function commonFinish() {
 function petBonusMul() { return S.pet.satiety >= 50 && petStage() > 0 ? 1.1 : 1; }
 
 function finishLesson() {
-  if (L.mode === 'quest') return Quest.finish();
   const stageBefore = petStage();
   commonFinish();
   let html;
   if (L.mode === 'fix') {
-    const got = earnCoins(L.coins * L.petMul);
+    /* Разовый дневной бонус: все «созревшие» ошибки предмета исправлены */
+    let bonus = 0;
+    const left = readyMistakes(L.subject).length;
+    if (L.fixed > 0 && !left && !day().fixBonus) { day().fixBonus = 1; bonus = 25; }
+    /* бонус обещан ребёнку — мимо дневного предела монет */
+    const got = earnCoins(L.coins * L.petMul) + earnCoins(bonus, true);
     addXP(L.xp);
     S.counters.lessons++;
     weekly('lesson');
-    html = resultHTML({ title: L.fixed ? 'Ошибки исправлены!' : 'Хорошая тренировка!', stars: null, lines: [`Исправлено ошибок: <b>${L.fixed}</b>`, `Осталось в списке: <b>${subjMistakes(L.subject).length}</b>`], coins: got, raw: Math.round(L.coins * L.petMul), xp: L.xp });
+    html = resultHTML({ title: !L.fixed ? 'Хорошая тренировка!' : left ? 'Ошибки исправляются!' : 'Ошибки исправлены!', stars: null, lines: [`Исправлено ошибок: <b>${L.fixed}</b>`, `Осталось в списке: <b>${subjMistakes(L.subject).length}</b>`, ...(bonus ? [`🏅 Все ошибки дня исправлены: <b>+${bonus}</b> <i class="ci"></i>`] : [])], coins: got, raw: Math.round(L.coins * L.petMul) + bonus, xp: L.xp });
   } else if (L.mode === 'mul') {
     markPlayed('mul');
     const got = earnCoins(L.coins * L.petMul);
@@ -1091,7 +1096,7 @@ function finishLesson() {
     st.plays = (st.plays || 0) + 1; st.last = acc; st.best = Math.max(st.best || 0, acc);
     S.counters.lessons++;
     const perfect = L.wrongs === 0 && L.hints === 0;
-    if (perfect && L.fresh) { S.counters.perfect++; weekly('perfect'); }
+    if (perfect && L.fresh) { S.counters.perfect++; weekly('perfect'); Life.remember('perfect', '💯', `Урок без ошибок: «${LESSONS[id].title}»`); }
     if (L.fresh) weekly('lesson');
     if (newStars) weekly('star', newStars);
     if (stars === 3 && prev < 3) weekly('three');
@@ -1115,10 +1120,10 @@ function finishLesson() {
 }
 function finishBoss(win) {
   if (L.finished) return;
+  if (L.stolen) { S.coins += L.stolen; L.stolen = 0; }
   const stageBefore = petStage();
   commonFinish();
   const w = L.world, wi = w.wi, first = !S.bosses[w.id];
-  const homeBefore = House.count();
   if (!first) markPlayed('boss_' + w.id);
   let html;
   if (win) {
@@ -1129,7 +1134,7 @@ function finishBoss(win) {
     const toy = 'boss_' + w.boss.id, newToy = !S.owned[toy];
     S.owned[toy] = true;
     L.chest = Boss.chestPrize(first, wi);
-    if (first) { S.bosses[w.id] = true; House.migrate(); weekly('star', 3); autoBackup(); }
+    if (first) { S.bosses[w.id] = true; weekly('star', 3); autoBackup(); Life.remember('boss', w.boss.emoji, 'Победа над боссом: ' + w.boss.name); BigRew.announce(); }
     addXP(L.xp + (first ? 200 : 20));
     const nextW = w.subject.worlds[wi + 1];
     const saved = { math: 'Числоград спасён', en: 'Остров Hello спасён', ru: 'Букваландия спасена' }[w.subject.id];
@@ -1137,12 +1142,11 @@ function finishBoss(win) {
       ${Boss.chestHTML()}<p class="chest-tip">Нажми на сундук!</p>
       <div class="after-chest" hidden>
       <div class="prize-card">${L.chest.html}</div>
-      ${House.unlockNames(homeBefore).map(name => `<div class="prize-card house-new">🔑 Открыто в доме: <b>${name}</b></div>`).join('')}
       ${newToy ? `<div class="prize-card toy">${w.boss.emoji} В домике новая игрушка: <b>${w.boss.name}</b>. Её можно обнять!</div>` : ''}
       <div class="res-coins">+${got} <i class="ci"></i> <span>+${L.xp + (first ? 200 : 20)} опыта</span></div>
       ${first && nextW ? `<div class="unlock-card" style="--c1:${nextW.c1};--c2:${nextW.c2}">${nextW.emoji} Открыт новый мир: <b>${nextW.name}</b></div>` : ''}
       ${first && !nextW ? `<div class="unlock-card">👑 ${saved}! Это настоящий подвиг!</div>` : ''}
-      <div class="res-btns"><button class="btn" data-act="resClose">На карту</button><button class="btn primary big" data-act="questHome">🏠 В домик</button></div></div></div>`;
+      <button class="btn primary big" data-act="resClose">На карту</button></div></div>`;
   } else {
     const got = earnCoins(L.coins * L.petMul);
     addXP(L.xp);
@@ -1171,6 +1175,9 @@ function afterFinish(stageBefore) {
     if (after > 0) autoBackup();
   }
   if (after > stageBefore) autoBackup();
+  if (after > stageBefore && stageBefore > 0) Life.remember('stage', '🌟', 'Новая стадия: ' + PET_STAGES[after].name);
+  if (after > stageBefore && stageBefore === 0) Life.remember('stage', '🐣', 'Питомец вылупился');
+  Life.onLesson();
   if (Date.now() - (S.lastBackup || 0) > 7 * 86400000) autoBackup();
   if (after > stageBefore) {
     celebrate(() => {
@@ -1234,11 +1241,13 @@ function renderPet() {
   const nextMicro = PET_MICRO.find(m => t < m.at);
   const rd = riddlesLeft();
   const cos = activeCostume();
+  const yard = Room.scene === 'yard';
   return `<div class="pet-screen">
-    ${House.header()}
+    ${stg > 0 ? `<div class="scene-tabs"><button class="${yard ? '' : 'on'}" data-act="scene" data-arg="room">🏠 Домик</button><button class="${yard ? 'on' : ''}" data-act="scene" data-arg="yard">🌳 Двор</button></div>` : ''}
     ${Room.html()}
-    ${House.footer()}
-    ${(S.counters.play || 0) < 15 && stg > 0 ? `<p class="room-hint">👆 Нажми на питомца или на подарок. Подарки можно двигать пальцем${S.owned.ball ? ', а мяч — бросить' : ''}!</p>` : ''}
+    ${yard && (S.life.yardVisits || 0) < 6 ? '<p class="room-hint">👆 Во дворе: грядки (посадить, полить, собрать), качели, яблоня, а в земле у дома — клад ✨</p>' : ''}
+    ${!yard && (S.counters.play || 0) < 15 && stg > 0 ? `<p class="room-hint">👆 Нажми на питомца или на подарок. Подарки можно двигать пальцем${S.owned.ball ? ', а мяч — бросить' : ''}!</p>` : ''}
+    ${stg > 0 ? BigRew.petRow() : ''}
     <div class="card pet-card">
       <div class="pc-head"><h2>${name}</h2><span class="stage-tag">${PET_STAGES[stg].name}</span></div>
       ${cos ? `<p class="costume-tag">${cos.icon} Костюм: <b>${cos.name}</b></p>` : ''}
@@ -1255,6 +1264,7 @@ function renderPet() {
         <button class="btn" data-act="riddle" ${stg === 0 || !rd ? 'disabled' : ''}>❓ Загадка${rd ? ` <small class="cnt">${rd}</small>` : ' · завтра'}</button>
         <button class="btn" data-act="hideSeek" ${stg === 0 ? 'disabled' : ''}>🙈 Прятки</button>
       </div>
+      ${stg > 0 ? Life.cardHTML() : ''}
     </div></div>`;
 }
 function openFeed() {
@@ -1274,6 +1284,7 @@ function openFeed() {
     if (S.pet.satiety >= 100) { toast('🐾 Спасибо, больше не хочется!'); return; }
     S.food[f.id]--; S.pet.satiety = Math.min(100, S.pet.satiety + f.sat);
     S.counters.fed++;
+    Life.touch(); Life.done('feed');
     checkAch(); save();
     m.close();
     render();
@@ -1315,13 +1326,13 @@ function openWardrobe() {
     const have = c.items.filter(id => S.owned[id]).length;
     return `<button class="wd-it cos ${have === c.items.length ? 'full' : ''} ${S.pet.costume === c.id ? 'on' : ''}" data-cos="${c.id}">${c.icon}<small>${c.name}<br>${have} из ${c.items.length}</small></button>`;
   }).join('')}</div></div>` + (() => {
-    const dec = House.allDecor();
+    const dec = [...SHOP, ...EXCLUSIVE, ...BOSS_TOYS].filter(i => i.cat === 'decor' && S.owned[i.id]);
     return dec.length ? `<div class="wd-sec"><b>Домик (показать / спрятать)</b><div class="wd-row">${dec.map(i => `<button class="wd-it ${S.hidden[i.id] ? '' : 'on'}" data-dec="${i.id}">${i.icon}<small>${i.name}</small></button>`).join('')}</div>
       <button class="link" data-roomreset="1">Расставить подарки как было</button></div>` : '';
   })();
   const m = modal({ cls: 'sheet', html: `<h2>Гардероб</h2><div class="wd-pet">${petSVG({ uid: 'wd' })}</div><div id="wdBody">${build()}</div>`, buttons: [{ label: 'Готово', cls: 'primary' }] });
   m.addEventListener('click', ev => {
-    if (ev.target.closest('[data-roomreset]')) { Object.keys(House.positions()).forEach(k => delete House.positions()[k]); save(); render(); toast('🏠 Подарки на своих местах'); return; }
+    if (ev.target.closest('[data-roomreset]')) { S.room.pos = {}; save(); render(); toast('🏠 Подарки на своих местах'); return; }
     const b = ev.target.closest('[data-wd],[data-dec],[data-cos]');
     if (!b) return;
     Sound.play('tap');
@@ -1379,7 +1390,7 @@ function renderShop() {
   } else {
     const tab = SHOP_TABS.find(t => t.id === SHOP_TAB);
     const cats = tab.cats || [SHOP_TAB];
-    body = `<div class="shop-grid">${SHOP.filter(i => cats.includes(i.cat)).map(i => shopCard(i, L2)).join('')}</div>`;
+    body = `<div class="shop-grid">${SHOP.filter(i => cats.includes(i.cat) && !i.noShop).map(i => shopCard(i, L2)).join('')}</div>`;
   }
   return `<div class="shop"><div class="shop-head"><h2>Магазин</h2><span class="wallet"><i class="ci"></i> ${fmt(S.coins)}</span></div>${tabs}${body}</div>`;
 }
@@ -1387,14 +1398,18 @@ function buy(id) {
   const i = ITEMS[id];
   if (!i || i.lvl > lvl()) return;
   if (S.coins < i.price) { Sound.play('wrong'); toast(`Не хватает ${fmt(i.price - S.coins)} <i class="ci"></i>. Пройди ещё урок или копи в 🐷 копилке!`); return; }
-  confirmBox(`<div class="m-icon">${i.icon}</div><h2>${i.name}</h2><p>Купить за <b>${fmt(i.price)} <i class="ci"></i></b>?</p>`, 'Купить', () => {
-    if (S.coins < i.price || (i.cat !== 'food' && S.owned[i.id])) return;
+  confirmBox(`<div class="m-icon">${i.icon}</div><h2>${i.name}</h2><p>Купить за <b>${fmt(i.price)} <i class="ci"></i></b>?</p>${moneyEq('👛 Кошелёк', S.coins, i.price)}`, 'Купить', () => {
+    if (S.coins < i.price) return;
     S.coins -= i.price;
     grant(i);
     Sound.play('buy');
     checkAch(); save(); render(); bump('#chip-coins');
     setTimeout(() => thank(i), 250);
   });
+}
+/* Запись «было − цена = останется» в окне покупки: арифметика на живом примере (идея из версии Codex) */
+function moneyEq(label, have, price) {
+  return `<span class="money-eq"><span><small>${label}</small>${fmt(have)}</span><b>−</b><span><small>Цена</small>${fmt(price)}</span><b>=</b><span><small>Останется</small>${fmt(have - price)}</span></span>`;
 }
 /* Выдать купленное (из кошелька или из копилки) */
 function grant(i) {
@@ -1454,10 +1469,9 @@ function renderPiggy() {
     : g && S.coins > 0 ? '<button class="btn" data-act="piggyPut">➕ Положить из кошелька</button>' : ''}</div></div>
     <h3 class="sub">🎁 Призы от взрослых</h3>
     <div class="prizes">${S.parent.prizes.length ? S.parent.prizes.map(p => `<div class="card prize ${isGoal('prize', p.id) ? 'goal' : ''}"><span class="p-ic">🎁</span><div class="p-mid"><b>${U.esc(p.name)}</b><small>${fmt(p.price)} <i class="ci"></i></small></div>
-      ${Economy.prizeButton(p)}${isGoal('prize', p.id) ? '<span class="eq">⭐ Цель</span>' : `<button class="btn sm" data-act="piggySet" data-arg="prize:${p.id}">🐷 Копить</button>`}</div>`).join('') : '<p class="small">Взрослые ещё не добавили призы.</p>'}</div>
+      ${isGoal('prize', p.id) ? '<span class="eq">⭐ Цель</span>' : `<button class="btn sm" data-act="piggySet" data-arg="prize:${p.id}">🐷 Копить</button>`}</div>`).join('') : '<p class="small">Взрослые ещё не добавили призы.</p>'}</div>
     ${shopGoals.length ? `<h3 class="sub">🛍️ Или дорогой подарок из магазина</h3><div class="prizes">${shopGoals.map(i => `<div class="card prize ${isGoal('item', i.id) ? 'goal' : ''}"><span class="p-ic">${i.icon}</span><div class="p-mid"><b>${i.name}</b><small>${fmt(i.price)} <i class="ci"></i></small></div>
       ${isGoal('item', i.id) ? '<span class="eq">⭐ Цель</span>' : `<button class="btn sm" data-act="piggySet" data-arg="item:${i.id}">🐷 Копить</button>`}</div>`).join('')}</div>` : ''}
-    <p class="balance-summary">Кошелёк: <b>${fmt(S.coins)}</b> · копилка: <b>${fmt(sv)}</b> · всего: <b>${fmt(Economy.total())}</b> монет</p>
     ${reqs.length ? `<h3 class="sub">Мои заказы</h3>${reqs.map(r => `<div class="req ${r.status}"><span>${U.esc(r.name)}</span><small>${r.status === 'wait' ? '⏳ ждёт взрослого' : r.status === 'given' ? '🎉 получено' : '↩️ отменено'}</small></div>`).join('')}` : ''}`;
 }
 function piggySet(arg) {
@@ -1487,9 +1501,25 @@ function piggyPut() {
 }
 function piggyClaim() {
   const g = piggyGoal();
-  if (g) Economy.confirmGift(g, 'piggy');
+  if (!g || S.piggy.saved < g.price) return;
+  confirmBox(`<div class="m-icon">${g.icon}</div><h2>${U.esc(g.name)}</h2><p>Потратить <b>${fmt(g.price)} <i class="ci"></i></b> из копилки?${moneyEq('🐷 Копилка', S.piggy.saved, g.price)}${g.t === 'prize' ? ' Взрослый получит твою заявку.' : ''}</p>`, 'Да!', () => {
+    if (S.piggy.saved < g.price || !S.piggy.goal) return;
+    S.piggy.saved -= g.price; S.piggy.goal = null;
+    S.counters.piggy = (S.counters.piggy || 0) + 1;
+    Sound.play('buy'); confetti();
+    if (g.t === 'prize') {
+      S.parent.requests.push({ id: 'r' + Date.now(), prize: g.id, name: g.name, price: g.price, t: Date.now(), status: 'wait' });
+      toast('🎁 Заявка отправлена взрослому!');
+      if (petStage() > 0) Speech.sayPet('Ура! Мы накопили! Какие мы молодцы!', petStage());
+    } else {
+      const i = ITEMS[g.id];
+      grant(i);
+      setTimeout(() => thank(i), 300);
+    }
+    if (S.piggy.saved > 0) { S.coins += S.piggy.saved; S.piggy.saved = 0; }
+    checkAch(); save(); render();
+  });
 }
-
 function buyGame(gid) {
   const price = gamePrice(day().games);
   const g = GAMES.find(x => x.id === gid);
@@ -1823,7 +1853,13 @@ function pMul() {
 function pPrizes() {
   const reqs = S.parent.requests.slice().reverse();
   const pg = piggyGoal();
-  return `<div class="card"><b>🐷 Копилка: ${fmt(S.piggy.saved)} <i class="ci"></i></b><p class="small">${pg ? `Цель: ${pg.icon} ${U.esc(pg.name)} (${fmt(pg.price)})` : 'Цель не выбрана.'} Доля в копилку — в «Настройках».</p>${S.piggy.saved ? '<button class="btn ghost sm" data-act="piggyBack">Вернуть монеты из копилки в кошелёк</button>' : ''}</div>
+  const log = (S.parent.coinLog || []).slice(-6).reverse();
+  return `<div class="card"><b>💰 Монеты ребёнка: ${fmt(S.coins)} <i class="ci"></i></b>
+    <p class="small">Можно подарить монеты (за помощь по дому, хорошую неделю) или снять (по договорённости). О подарке ребёнок увидит сообщение, о снятии — скажите сами.</p>
+    <div class="coin-give"><input class="inp num" id="pcAmount" type="number" min="1" step="10" value="50" aria-label="Сколько монет"><input class="inp" id="pcWhy" maxlength="60" placeholder="За что? (увидит ребёнок)">
+    <div class="rq-b"><button class="btn ghost sm" data-act="coinTake">− Снять</button><button class="btn primary sm" data-act="coinGive">🎁 Подарить</button></div></div>
+    ${log.length ? `<div class="coin-log">${log.map(x => `<small>${new Date(x.t).toLocaleDateString('ru-RU')} · ${x.n > 0 ? '+' : ''}${fmt(x.n)}${x.why ? ' — ' + U.esc(x.why) : ''}</small>`).join('')}</div>` : ''}</div>
+  <div class="card"><b>🐷 Копилка: ${fmt(S.piggy.saved)} <i class="ci"></i></b><p class="small">${pg ? `Цель: ${pg.icon} ${U.esc(pg.name)} (${fmt(pg.price)})` : 'Цель не выбрана.'} Доля в копилку — в «Настройках».</p>${S.piggy.saved ? '<button class="btn ghost sm" data-act="piggyBack">Вернуть монеты из копилки в кошелёк</button>' : ''}</div>
     <p class="small">Добавьте реальные награды. Ребёнок выбирает цель в магазине (🐷 Копилка), копит монеты и получает приз, а вы подтверждаете выдачу. Ориентир: за хороший день занятий ребёнок получает около ${S.settings.dailyLimit || 500} монет.</p>
     ${reqs.filter(r => r.status === 'wait').map(r => `<div class="card req-p"><div><b>🎁 ${U.esc(r.name)}</b><small>${new Date(r.t).toLocaleDateString('ru-RU')} · ${fmt(r.price)} <i class="ci"></i></small></div>
       <div class="rq-b"><button class="btn ghost sm" data-act="reqCancel" data-arg="${r.id}">Вернуть монеты</button><button class="btn primary sm" data-act="reqGive" data-arg="${r.id}">Выдано ✓</button></div></div>`).join('')}
@@ -1846,7 +1882,7 @@ function pSettings() {
     <label class="fld"><b>Питомец засыпает</b><small>Вечером питомец спит и просит закончить игру. Уроки остаются доступны.</small>${sel('sleepFrom', [[0, 'не засыпает'], [20, 'в 20:00'], [20.5, 'в 20:30'], [21, 'в 21:00'], [21.5, 'в 21:30'], [22, 'в 22:00']], s.sleepFrom)}</label>
     <label class="fld"><b>🐷 Копилка</b><small>Какая часть заработанных монет сама падает в копилку, когда у ребёнка есть цель.</small>${sel('piggyShare', [[25, '25%'], [50, '50% (рекомендуется)'], [75, '75%'], [100, '100% — всё в копилку']], s.piggyShare)}</label>
     ${tg('openAll', s.openAll, 'Открыть все темы', 'Можно сразу выбрать любую тему (например, для 3 класса). Боссы всё равно требуют 2 звезды в темах мира.')}
-    <div class="card"><b>🔤 Английский голос</b><p class="small">${Speech.enOk() ? `Найден: ${U.esc(Speech.enVoice?.name || 'Записанный английский голос')} (${U.esc(Speech.enVoice?.lang || 'en-GB')}). Нажмите, чтобы послушать.` : 'Английский голос не найден — задания на слух заменяются чтением. На Android: Настройки → Специальные возможности → Синтез речи → «Синтезатор речи Google» → установите английский (Великобритания).'}</p>
+    <div class="card"><b>🔤 Английский голос</b><p class="small">${Speech.enOk() ? `Найден: ${U.esc(Speech.enVoice.name)} (${U.esc(Speech.enVoice.lang)}). Нажмите, чтобы послушать.` : 'Английский голос не найден — задания на слух заменяются чтением. На Android: Настройки → Специальные возможности → Синтез речи → «Синтезатор речи Google» → установите английский (Великобритания).'}</p>
       <button class="btn" data-act="voiceTest">🔊 Проверить голос</button></div>
     <button class="btn" data-act="pinChange">🔐 Сменить PIN-код</button>
   </div>`;
@@ -1855,13 +1891,22 @@ function pBackup() {
   const last = S.lastBackup ? new Date(S.lastBackup).toLocaleString('ru-RU') : 'ещё ни разу';
   return `<div class="set">
     <div class="card"><b>Последнее сохранение:</b> ${last}<p class="small">Прогресс хранится в браузере на этом устройстве. Если очистить данные браузера или сменить устройство, прогресс пропадёт. Раз в неделю сохраняйте файл резервной копии.</p></div>
-    <button class="btn" data-act="preUpgradeSave">🗂️ Скачать копию до большого обновления</button>
     <label class="tg"><span><b>Автоматическая копия</b><small>После победы над боссом, роста питомца, испытаний недели (и если копии не было неделю) файл сам сохраняется в «Загрузки». Не чаще раза в день.</small></span><input type="checkbox" data-set="autoBackup" ${S.settings.autoBackup ? 'checked' : ''}><i></i></label>
     <button class="btn primary big" data-act="exportSave">💾 Сохранить прогресс в файл</button>
     <label class="btn big file-btn">📂 Загрузить прогресс из файла<input type="file" accept=".json,application/json" id="importFile" hidden></label>
+    ${hasPreUpgrade() ? '<button class="btn" data-act="preUpgradeSave">📦 Скачать копию до обновления 16</button>' : ''}
     <h3 class="sub">Опасная зона</h3>
     <button class="btn danger" data-act="resetAll">🗑 Сбросить весь прогресс</button>
   </div>`;
+}
+/* Копия сохранения, сделанная перед первым запуском версии 16 */
+function hasPreUpgrade() { try { return !!localStorage.getItem(KEY + '_before_v16'); } catch (e) { return false; } }
+function downloadPreUpgrade() {
+  let raw; try { raw = localStorage.getItem(KEY + '_before_v16'); } catch (e) { return; }
+  if (!raw) { toast('Копии до обновления на этом устройстве нет'); return; }
+  const a = document.createElement('a'), url = URL.createObjectURL(new Blob([raw], { type: 'application/json' }));
+  a.href = url; a.download = 'bukvalandia-до-версии-16.json'; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 /* Автокопия в «Загрузки» после важного события (победа над боссом, рост питомца, неделя) — не чаще раза в день */
 function autoBackup() {
@@ -1893,6 +1938,38 @@ function importSave(file) {
     });
   };
   r.readAsText(file);
+}
+
+/* ---------- Монеты от взрослых: подарить или снять из родительского раздела ---------- */
+function parentCoins(sign) {
+  const n = Math.round(+($('#pcAmount') || {}).value || 0);
+  const why = (($('#pcWhy') || {}).value || '').trim().slice(0, 60);
+  if (n <= 0) { toast('Введите, сколько монет'); return; }
+  const d = sign > 0 ? n : -Math.min(n, S.coins);
+  if (!d) { toast('У ребёнка нет столько монет'); return; }
+  S.coins += d;
+  S.parent.coinLog = (S.parent.coinLog || []).slice(-19);
+  S.parent.coinLog.push({ t: Date.now(), n: d, why });
+  if (d > 0) { S.giftNews.push({ n: d, why, t: Date.now() }); queueGiftNews(); }
+  save(); parentPanel('prizes');
+  toast(d > 0 ? `🎁 Подарено ${fmt(d)} монет` : `Снято ${fmt(-d)} монет`);
+}
+/* Сообщение ребёнку о подарке — покажется, когда родительский раздел закроют (или при следующем запуске) */
+function queueGiftNews() {
+  (S.giftNews || []).forEach(g => {
+    if (g.q) return;
+    g.q = true;
+    celebrate(() => {
+      S.giftNews = (S.giftNews || []).filter(x => x !== g);
+      save();
+      Sound.play('buy'); confetti(40);
+      modal({
+        cls: 'celebrate',
+        html: `<div class="m-icon">🎁</div><h2>Подарок от взрослых!</h2><p class="reward">+${fmt(g.n)} <i class="ci"></i></p>${g.why ? `<p>${U.esc(g.why)}</p>` : ''}`,
+        buttons: [{ label: 'Спасибо!', cls: 'primary' }],
+      });
+    });
+  });
 }
 
 /* ============================================================
@@ -1966,23 +2043,6 @@ function onboarding() {
    СОБЫТИЯ
    ============================================================ */
 const ACTIONS = {
-  preUpgradeSave: () => downloadPreUpgradeSave(),
-  houseRoom: a => House.switchRoom(a),
-  houseEdit: () => { House.editing = !House.editing; render(); },
-  houseInventory: () => House.inventory(),
-  houseStation: a => House.openStation(a),
-  houseUnlocks: () => House.unlocks(),
-  houseAlbum: () => House.album(),
-  houseFestival: () => House.festival(),
-  houseTrain: a => House.train(a),
-  houseQuests: () => Quest.open(),
-  houseActivities: () => House.activities(),
-  houseTricks: () => House.tricks(),
-  housePerform: a => House.performRoutine(a),
-  questAgain: a => { Back.done(); closeLesson(); startSession('quest', a); },
-  questHome: () => { Back.done(); TAB = 'pet'; closeLesson(); },
-  prizeClaim: a => Economy.claimPrize(a),
-  battlePower: a => Battle.power(a),
   tab: a => { TAB = a; Sound.play('tap'); $('#screen').scrollTop = 0; render(); },
   lesson: a => { Sound.play('tap'); openLessonSheet(a); },
   boss: a => { Sound.play('tap'); openBossSheet(a); },
@@ -1993,7 +2053,7 @@ const ACTIONS = {
   voiceTest: () => {
     if (!Speech.enOk()) { toast('Английский голос не найден. Установите «Синтезатор речи Google» и английский язык в нём.'); return; }
     Speech.sayEn('Hello! Let\'s learn English together!');
-    toast(`🔊 Голос: ${U.esc(Speech.enVoice?.name || 'Записанный английский голос')} (${Speech.enVoice?.lang || 'en-GB'})`);
+    toast(`🔊 Голос: ${U.esc(Speech.enVoice.name)} (${Speech.enVoice.lang})`);
   },
   mulAgain: () => { Back.done(); closeLesson(); setTimeout(() => startSession('mul'), 50); },
   subject: a => { if (!SUBJ[a] || S.subject === a) return; S.subject = a; Sound.play('tap'); save(); $('#screen').scrollTop = 0; render(); },
@@ -2007,7 +2067,8 @@ const ACTIONS = {
     $('#kok').disabled = !L.typed;
   },
   quit: () => askQuit(),
-  ans: a => answer(a),
+  /* двойное касание «Дальше» не должно попасть в вариант следующего задания */
+  ans: a => { if (L && Date.now() - L.shown < 300) return; answer(a); },
   next: () => next(),
   hint: () => useHint(),
   say: () => sayTask(),
@@ -2019,7 +2080,10 @@ const ACTIONS = {
   again: a => { Back.done(); closeLesson(); setTimeout(() => startSession('lesson', a), 50); },
   bossAgain: a => { Back.done(); closeLesson(); setTimeout(() => startSession('boss', a), 50); },
   riddle: () => openRiddle(),
-  hideSeek: () => Room.hideSeek(),
+  hideSeek: () => { if (Room.scene === 'yard') { Room.scene = 'room'; render(); setTimeout(() => Room.hideSeek(), 700); } else Room.hideSeek(); },
+  scene: a => { if (Room.scene === a) return; Room.scene = a; Sound.play('tap'); render(); },
+  album: () => Life.openAlbum(),
+  memories: () => Life.openMemories(),
   piggySet: a => piggySet(a),
   piggyPut: () => piggyPut(),
   piggyClaim: () => piggyClaim(),
@@ -2036,10 +2100,13 @@ const ACTIONS = {
   parent: a => openParent(a),
   parentClose: () => { Back.done(); closeParent(); },
   pTab: a => parentPanel(a),
+  coinGive: () => parentCoins(1),
+  coinTake: () => parentCoins(-1),
+  preUpgradeSave: () => downloadPreUpgrade(),
   prizeAdd: () => { S.parent.prizes.push({ id: 'p' + Date.now(), name: 'Новый приз', price: 1000 }); save(); parentPanel('prizes'); },
   prizeDel: a => { S.parent.prizes = S.parent.prizes.filter(p => p.id !== a); save(); parentPanel('prizes'); },
-  reqGive: a => Economy.resolve(a, 'given'),
-  reqCancel: a => Economy.resolve(a, 'cancel'),
+  reqGive: a => { const r = S.parent.requests.find(x => x.id === a); if (r && r.status === 'wait') { r.status = 'given'; save(); parentPanel('prizes'); } },
+  reqCancel: a => { const r = S.parent.requests.find(x => x.id === a); if (r && r.status === 'wait') { r.status = 'cancel'; S.coins += r.price; save(); parentPanel('prizes'); } },
   pinChange: () => pinSetup('settings'),
   exportSave: () => exportSave(),
   resetAll: () => confirmBox('<div class="m-icon">⚠️</div><h2>Сбросить всё?</h2><p>Звёзды, монеты, питомец и покупки будут удалены. Сначала сохраните файл резервной копии!</p>', 'Сбросить', () => {
@@ -2050,6 +2117,7 @@ const ACTIONS = {
     }), 250);
   }),
 };
+Object.assign(ACTIONS, BigRew.actions);   // награды за главных боссов (js/bigrew.js)
 document.addEventListener('click', ev => {
   const el = ev.target.closest('[data-act]');
   if (!el || el.disabled) return;
@@ -2109,12 +2177,14 @@ function boot() {
   tick();
   Speech.init();
   PetVoice.load(S.pet.species);
+  (S.giftNews || []).forEach(g => { delete g.q; });   // подарки монет, не показанные до перезапуска
+  queueGiftNews();
   EnVoice.load();
   applyTheme();
   save();
   render();
   if (!S.onboarded) onboarding();
-  else announceSubjects();
+  else { announceSubjects(); BigRew.announce(); setTimeout(flushQueue, 600); }   // показать отложенные окна (подарок монет и др.)
   if ('serviceWorker' in navigator && /^https?:/.test(location.protocol)) {
     navigator.serviceWorker.register('sw.js').catch(() => { /* офлайн-режим недоступен */ });
   }

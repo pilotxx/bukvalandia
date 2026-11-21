@@ -20,6 +20,11 @@ const BOSS_LINES = {
   down: ['Ой-ой-ой-ой!', 'Не-е-ет! Колдовство пропадает!'],
   free: ['Спасибо! Теперь мы друзья!', 'Ура! Злые чары исчезли! Спасибо!', 'Как хорошо! Больше никаких проказ!'],
   win: ['Ха-ха! В этот раз победа моя!', 'Приходи ещё, если не боишься!'],
+  phase2: ['Это ещё не всё! Теперь я разозлюсь по-настоящему!', 'Ах так?! Смотри, какая у меня сила!', 'Р-р-р! Теперь всё будет по-другому!'],
+  weak: ['Эй! Откуда ты знаешь про моё слабое место?!', 'Ай! Только не сюда!', 'Ой-ой! Это же мой секрет!'],
+  steal: ['Хи-хи! Монетка моя!', 'Цап! Утащу монетку!'],
+  giveBack: ['Эх, забирай свою монетку…', 'Ну вот, монетка убежала обратно!'],
+  trick2: ['А вот мой новый приём!', 'Это приём из грозовой тучи!'],
   trick: {
     b1: ['Тс-с-с! Заглушу все звуки!', 'У-у-у! Слышишь мои волны?'],
     b2: ['Ам! Откушу кусочек!', 'Хрум-хрум! Вкусный слог!'],
@@ -46,6 +51,9 @@ const BOSS_LINES = {
     eb6: ['Бу! Темнота!', 'Бу-у! Наступила ночь!'],
     eb7: ['Ам-ням! Откушу!', 'Ням! Вкусный краешек!'],
     eb8: ['Бом-м! Топ-топ!', 'Бом-м! Земля трясётся!'],
+    b9: ['Паутина! Попробуй выпутайся!', 'Плету-плету, всё запутаю!'],
+    mb10: ['Звездопад! Лови осколки!', 'Бах! Разобью на кусочки!'],
+    eb9: ['Дзынь-дзынь! Лови будильники!', 'Тик-так! Время пролетело!'],
   },
 };
 /* конец фраз босса */
@@ -58,11 +66,13 @@ const BOSS_FX = {
   mb6: { t: 'night' }, mb7: { t: 'rocks', g: '🔺🟦🟡' }, mb8: { t: 'ghost' }, mb9: { t: 'stomp', g: '🪨' },
   eb1: { t: 'shuffle' }, eb2: { t: 'waves' }, eb3: { t: 'bite' }, eb4: { t: 'rocks', g: '🪶' }, eb5: { t: 'ghost' },
   eb6: { t: 'night' }, eb7: { t: 'bite' }, eb8: { t: 'stomp', g: '🪨' },
+  b9: { t: 'rocks', g: '🕸️' }, mb10: { t: 'rocks', g: '☄️⭐' }, eb9: { t: 'rocks', g: '⏰🔔' },
 };
 
 /* Плюшевые игрушки — расколдованные боссы в домике питомца (выдаются при первой победе) */
 const BOSS_TOYS = [];
-ALL_WORLDS.forEach((w, k) => {
+/* новые миры (g3) — в конце, чтобы игрушки прежних боссов стояли на старых местах */
+[...ALL_WORLDS.filter(w => !w.g3), ...ALL_WORLDS.filter(w => w.g3)].forEach((w, k) => {
   const b = w.boss;
   const it = { id: 'boss_' + b.id, cat: 'decor', icon: b.emoji, name: 'Игрушка «' + b.name + '»', zone: 'floor',
     x: 50 + (k * 83) % 540, y: 318 + (k % 3) * 24, h: 50, play: 'hug', ps: 1, plush: true };
@@ -116,35 +126,21 @@ const Boss = {
   },
   petHTML() {
     return `<div class="arena-pet" id="aPet"><div class="ap-in" id="aPetIn">${petSVG({ uid: 'ap', mood: 'happy' })}</div></div>
+      <div class="ap-power" id="apPower"><b></b><b></b><b></b><b></b></div>
       <div class="ap-say" id="pSay"></div><div class="arena-fx" id="aFx"></div>`;
   },
   start() {
     BossVoice.load();
-    Object.assign(L, { helped: false, trickNext: false, bState: '', biteLeft: 0, blotTold: false, lastCrit: false });
-    this.later(() => Boss.bossSay(U.rnd(BOSS_LINES.start)), 500);
+    Object.assign(L, { helped: false, trickNext: false, bState: '', biteLeft: 0, blotTold: false, lastCrit: false,
+      power: 0, superReady: false, phase2: false, hits: 0, weakShown: false, weak: false, event: null, eventsDone: 0, stolen: 0 });
+    Boss.later(() => { if (L && L.mode === 'boss') Boss.bossSay(U.rnd(BOSS_LINES.start)); }, 500);
   },
 
-  /* Каждый отложенный эффект принадлежит ровно одному бою. */
-  isCurrent(session, allowFinished = false) {
-    return !!session && L === session && session.mode === 'boss' && (allowFinished || !session.finished);
-  },
-  later(fn, delay, session = L, allowFinished = false) {
-    if (!session) return null;
-    session.bossTimers = session.bossTimers || new Set();
-    const timer = setTimeout(() => {
-      session.bossTimers.delete(timer);
-      if (this.isCurrent(session, allowFinished)) fn();
-    }, delay);
-    session.bossTimers.add(timer);
-    return timer;
-  },
-  cancel(session) {
-    if (!session) return;
-    session.bossTimers?.forEach(timer => clearTimeout(timer));
-    session.bossTimers?.clear();
-    session.bossAnimations?.forEach(animation => animation.cancel());
-    session.bossAnimations?.clear();
-    clearTimeout(this.bT); clearTimeout(this.pT);
+  /* Отложенный шаг боя срабатывает только в том бою, где его запланировали
+     (иначе после выхода и начала нового боя старая победа или приём попадали в новый бой). */
+  later(fn, delay) {
+    const s = L;
+    return setTimeout(() => { if (s && L === s && s.mode === 'boss' && !s.finished) fn(); }, delay);
   },
 
   /* ---------- Мелочи ---------- */
@@ -179,23 +175,21 @@ const Boss = {
   },
   /* Полёт снаряда по дуге от одного элемента к другому */
   fly(html, from, to, cls = '', dur = 520, arc = -80) {
-    const session = L;
     const [x0, y0] = this.center(from, 0.4), [x1, y1] = this.center(to, 0.5);
     const el = this.fxEl('shot ' + cls, `left:${x0}px;top:${y0}px`, html);
     if (!el) return Promise.resolve();
     const dx = x1 - x0, dy = y1 - y0;
+    const s = L;
     return new Promise(res => {
-      const end = () => { el.remove(); res(); };
+      /* после выхода из боя продолжение полёта не выполняется */
+      const end = () => { el.remove(); if (L === s) res(); };
       if (!el.animate) { setTimeout(end, 50); return; }
       const a = el.animate([
         { transform: 'translate(-50%,-50%) scale(.6) rotate(0deg)' },
         { transform: `translate(calc(-50% + ${dx / 2}px), calc(-50% + ${dy / 2 + arc}px)) scale(1.15) rotate(200deg)`, offset: 0.5 },
         { transform: `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) scale(.9) rotate(400deg)` },
       ], { duration: dur, easing: 'ease-in' });
-      session.bossAnimations = session.bossAnimations || new Set();
-      session.bossAnimations.add(a);
-      const finish = () => { session.bossAnimations.delete(a); end(); };
-      a.onfinish = finish; a.oncancel = finish;
+      a.onfinish = end;
     });
   },
   /* Чем бросает питомец: русский — буква из ответа, математика — цифра, английский — ABC */
@@ -246,24 +240,39 @@ const Boss = {
       this.bossSay(U.rnd(BOSS_LINES.shield));
     }
     this.setPet('happy');
+    $$('#aFx .bfly, #aFx .evstar').forEach(x => x.remove());
+    if (L.event && L.event.type !== 'steal') L.event = null;
     if (L.biteLeft > 0 && --L.biteLeft === 0) this.unbite();
-    if (L.hearts === 1 && !L.helped) this.later(() => this.help(), 700);
-    else if (L.trickNext || (L.pos % 5 === 2)) { L.trickNext = false; const session = L; this.later(() => { if (session.queue[session.pos] === e && !session.answered) this.trick(); }, e.shield ? 1600 : 800, session); }
+    /* во второй фазе приёмы чаще: каждый 3-й вопрос вместо 5-го */
+    const trickNow = L.trickNext || (L.phase2 ? L.pos % 3 === 1 : L.pos % 5 === 2);
+    if (L.hearts === 1 && !L.helped) Boss.later(() => this.help(), 700);
+    else if (trickNow) { L.trickNext = false; Boss.later(() => this.trick(), e.shield ? 1600 : 800); }
+    else if (!e.shield && !L.event && L.pos >= 2 && L.eventsDone < 2 && Math.random() < 0.22) Boss.later(() => this.startEvent(), 900);
+  },
+  /* Шкала суперудара: верный ответ +1 деление, ошибка −1; полная — следующий верный ответ бьёт −2 (−3 при открытом слабом месте) */
+  renderPower() {
+    const el = $('#apPower'); if (!el) return;
+    [...el.children].forEach((b, i) => b.classList.toggle('on', i < L.power || L.superReady));
+    el.classList.toggle('full', L.superReady);
+    const p = $('#aPet'); if (p) p.classList.toggle('charged', L.superReady);
   },
   correct(e, t) {
-    const session = L;
-    const crit = L.combo > 0 && L.combo % 5 === 0, dmg = t.battleFinal ? L.hp : (crit ? 2 : 1) + (L.chargedStrike ? 1 : 0);
-    L.chargedStrike = false;
+    this.flyAway();
+    this.resolveEvent(true);
+    const crit = L.superReady, dmg = crit ? (L.weak ? 3 : 2) : 1;
     L.lastCrit = crit;
+    if (crit) { L.superReady = false; L.power = 0; }
+    else { L.power = Math.min(4, L.power + 1); if (L.power >= 4) { L.superReady = true; this.petSay('Шкала полная! Следующий верный ответ — суперудар!'); this.tones([[520, 0, 0.1], [660, 0.1, 0.1], [880, 0.2, 0.2]], 'triangle', 0.08); } }
+    this.renderPower();
     L.hp = Math.max(0, L.hp - dmg);
     this.clearFx();
     const pet = $('#aPet'), boss = $('#bEmo');
     this.re(pet, 'throw');
     this.setPet(crit ? 'laugh' : 'happy');
-    if (crit) this.petSay('Суперудар!');
+    if (crit) this.petSay(dmg >= 3 ? 'Суперудар в слабое место!' : 'Суперудар!');
     const g = this.ammo(t);
     this.fly(crit ? `${g}<b>💥</b>` : g, pet, boss, crit ? 'crit' : '', crit ? 600 : 520, crit ? -120 : -80)
-      .then(() => { if (this.isCurrent(session)) this.impact(dmg, crit, !!e.shield); });
+      .then(() => this.impact(dmg, crit, !!e.shield));
   },
   impact(dmg, crit, shield) {
     if (!L || L.mode !== 'boss') return;
@@ -272,7 +281,7 @@ const Boss = {
     Sound.play('hit');
     if (crit) { this.re(this.ov(), 'quake'); this.tones([[200, 0, 0.2], [120, 0.08, 0.3]], 'sawtooth', 0.1); }
     if (shield) this.breakShield();
-    this.float((crit ? 'КРИТ! ' : '') + '−' + dmg, b, crit ? 'crit' : '');
+    this.float(crit ? `СУПЕРУДАР! −${dmg}` : '−1', b, crit ? 'crit' : '');
     const [x, y] = this.center(b);
     for (let i = 0; i < (crit ? 9 : 5); i++) {
       const a = Math.random() * 6.28, r = 50 + Math.random() * 40;
@@ -281,8 +290,14 @@ const Boss = {
     $('#hpBar').style.width = (100 * L.hp / L.hpMax) + '%';
     this.unbite();
     if (L.hp <= 0) return;
-    /* настроение: ≤50 % — злится, ≤20 % — пугается */
-    const q = L.hp / L.hpMax, st = q <= 0.2 ? 'scared' : q <= 0.5 ? 'angry' : '';
+    /* слабое место: после 3-го попадания на боссе начинает мерцать искорка */
+    L.hits++;
+    if (L.hits >= 3 && !L.weakShown) Boss.later(() => this.showWeak(), 900);
+    /* вторая фаза: на половине здоровья босс преображается, арена темнеет */
+    const q = L.hp / L.hpMax;
+    if (!L.phase2 && q <= 0.5) { Boss.later(() => this.enterPhase2(), 650); return; }
+    /* настроение: ≤20 % — пугается (злость — часть второй фазы) */
+    const st = q <= 0.2 ? 'scared' : q <= 0.5 ? 'angry' : '';
     const ab = $('#aBoss');
     if (st !== L.bState) {
       L.bState = st;
@@ -302,15 +317,22 @@ const Boss = {
     this.tones([[1400, 0, 0.08], [1000, 0.05, 0.1], [1700, 0.1, 0.15]], 'square', 0.05);
   },
   wrong() {
-    const session = L;
     L.hearts = Math.max(0, L.hearts - 1);
     L.trickNext = L.hearts > 0;
+    /* шкала суперудара: ошибка −1 деление (накопленная полная шкала не пропадает) */
+    if (!L.superReady) { L.power = Math.max(0, L.power - 1); this.renderPower(); }
+    this.flyAway();
+    if (L.event && L.event.type === 'star') {
+      L.event = null;
+      const st = $('#aFx .evstar'); if (st) st.remove();
+      Boss.later(() => { if (L && L.mode === 'boss') this.petSay('Звёздочка улетела… Ничего, в другой раз!'); }, 1500);
+    }
     this.clearFx();
     const pet = $('#aPet'), boss = $('#bEmo'), ab = $('#aBoss');
     this.re(ab, 'laughing');
     this.bossSay(U.rnd(L.hearts ? BOSS_LINES.laugh : BOSS_LINES.win));
     this.fly('<i class="inkb"></i>', boss, pet, 'ink', 560, -40).then(() => {
-      if (!this.isCurrent(session)) return;
+      if (!L || L.mode !== 'boss') return;
       this.re(pet, 'ouch');
       this.fxEl('splat', (([x, y]) => `left:${x}px;top:${y}px`)(this.center(pet, 0.45)), '', 1500);
       this.setPet('sad');
@@ -322,22 +344,148 @@ const Boss = {
   /* Помощь питомца: при одном сердечке — один раз за бой +1 */
   help() {
     if (!L || L.mode !== 'boss' || L.helped || L.hearts !== 1) return;
-    const session = L;
     L.helped = true;
     this.setPet('love');
     this.petSay('Держись, я помогу!');
     this.fly('❤️', $('#aPet'), $('#hearts'), 'heartshot', 750, -90).then(() => {
-      if (!this.isCurrent(session)) return;
+      /* пока сердечко летело, ребёнок мог потерять последнее — поражение уже наступило */
+      if (!L || L.mode !== 'boss' || L.hearts <= 0 || L.finished) return;
       L.hearts++; this.hearts(); this.re($('#hearts'), 'bump');
       Sound.play('pet');
     });
   },
 
+  /* ---------- Вторая фаза: босс крупнее, арена темнеет, приёмы чаще ---------- */
+  enterPhase2() {
+    if (!L || L.mode !== 'boss' || L.phase2 || L.finished) return;
+    L.phase2 = true; L.bState = 'angry';
+    const ov = this.ov(), ab = $('#aBoss');
+    this.fxEl('flash', '', '', 600);
+    this.re(ov, 'quake');
+    ov.classList.add('phase2');
+    ab.classList.add('angry');
+    ab.querySelector('.ab-mood').textContent = '💢';
+    this.bossSay(U.rnd(BOSS_LINES.phase2));
+    this.tones([[160, 0, 0.25], [120, 0.2, 0.3], [90, 0.45, 0.45]], 'sawtooth', 0.12);
+    this.noise(0.5, 300, 0.1, 'lowpass');
+    Boss.later(() => { if (L && L.mode === 'boss') this.petSay('Ух ты, босс стал больше! Мы справимся!'); }, 1800);
+  },
+
+  /* ---------- Слабое место: нажми на искорку — суперудары станут −3 ---------- */
+  weakSpots: [[14, 8], [74, 16], [20, 66], [68, 62]],
+  showWeak() {
+    if (!L || L.mode !== 'boss' || L.weakShown || L.finished) return;
+    L.weakShown = true;
+    const wrap = $('#aBoss .ab-wrap'); if (!wrap) return;
+    const [px, py] = U.rnd(this.weakSpots);
+    const b = document.createElement('button');
+    b.className = 'ab-weak'; b.textContent = '✨'; b.setAttribute('aria-label', 'Слабое место');
+    b.style.left = px + '%'; b.style.top = py + '%';
+    b.addEventListener('click', () => this.foundWeak(b));
+    wrap.appendChild(b);
+    this.petSay(S.weakKnown[L.world.boss.id] ? 'Помнишь, где слабое место? Ищи искорку!' : 'Смотри, искорка! Нажми на неё — там слабое место босса!');
+  },
+  foundWeak(b) {
+    if (!L || L.mode !== 'boss' || L.weak) return;
+    L.weak = true;
+    S.weakKnown[L.world.boss.id] = true; save();
+    b.textContent = '🎯'; b.classList.add('mark');
+    const [x, y] = this.center(b);
+    for (let i = 0; i < 7; i++) this.fxEl('spark', `left:${x}px;top:${y}px;--dx:${Math.random() * 120 - 60}px;--dy:${Math.random() * 100 - 50}px`, '✨', 800);
+    this.float('Слабое место!', b, '');
+    this.re($('#bEmo'), 'hit');
+    Sound.play('star');
+    this.bossSay(U.rnd(BOSS_LINES.weak));
+    Boss.later(() => { if (L && L.mode === 'boss') this.petSay('Теперь суперудар бьёт сильнее!'); }, 1700);
+  },
+
+  /* ---------- Редкие события: кража монетки, золотая бабочка, добрая звёздочка ---------- */
+  startEvent() {
+    if (!L || L.mode !== 'boss' || L.finished || L.answered || L.event) return;
+    if (L.hearts < 3 && Math.random() < 0.5) return this.evStar();
+    if (S.coins >= 5 && Math.random() < 0.6) return this.evSteal();
+    this.evFly();
+  },
+  evSteal() {
+    L.event = { type: 'steal' }; L.stolen = 5; L.eventsDone++;
+    S.coins = Math.max(0, S.coins - 5);
+    const boss = $('#bEmo'), pet = $('#aPet');
+    this.bossSay(U.rnd(BOSS_LINES.steal));
+    this.re($('#aBoss'), 'laughing');
+    this.fly('<i class="ci"></i>', pet, boss, 'ink', 650, -90).then(() => {
+      if (!L || L.mode !== 'boss' || !L.stolen) return;
+      const wrap = $('#aBoss .ab-wrap');
+      if (wrap && !wrap.querySelector('.ab-coin')) wrap.insertAdjacentHTML('beforeend', '<span class="ab-coin"><i class="ci"></i></span>');
+      this.petSay('Ответь верно — монетка вернётся!');
+    });
+    this.tones([[900, 0, 0.07], [700, 0.08, 0.07], [500, 0.16, 0.1]], 'triangle', 0.08);
+  },
+  evFly() {
+    L.event = { type: 'fly' }; L.eventsDone++;
+    const r = this.bodyRect();
+    const el = this.fxEl('bfly', `left:${r.left + r.width * (0.12 + Math.random() * 0.2)}px;top:${r.top + 20 + Math.random() * 60}px`, '🦋');
+    if (!el) return;
+    el.addEventListener('click', () => {
+      if (!L) return;
+      const got = earnCoins(6);
+      this.float(got ? `+${got}` : '+0', el, '');
+      Sound.play('coin');
+      el.remove();
+      if (L.event && L.event.type === 'fly') L.event = null;
+    }, { once: true });
+    this.petSay('Смотри, золотая бабочка! Нажми на неё!');
+  },
+  /* бабочка улетает, как только ребёнок ответил (не нажатая — без монет) */
+  flyAway() {
+    $$('#aFx .bfly').forEach(x => { x.classList.add('away'); x.style.pointerEvents = 'none'; setTimeout(() => x.remove(), 500); });
+    if (L && L.event && L.event.type === 'fly') L.event = null;
+  },
+  evStar() {
+    L.event = { type: 'star' }; L.eventsDone++;
+    const r = this.bodyRect();
+    this.fxEl('evstar', `left:${r.left + r.width * 0.82}px;top:${r.top + 30}px`, '⭐');
+    this.petSay('Ответь верно — звёздочка вернёт сердечко!');
+    this.tones([[660, 0, 0.12], [880, 0.12, 0.2]], 'triangle', 0.08);
+  },
+  resolveEvent(ok) {
+    if (!ok || !L) return;
+    /* украденная монетка возвращается после любого верного ответа, и +2 сверху */
+    if (L.stolen) {
+      const back = L.stolen; L.stolen = 0;
+      if (L.event && L.event.type === 'steal') L.event = null;
+      S.coins += back; earnCoins(2, true);
+      const coin = $('#aBoss .ab-coin');
+      this.bossSay(U.rnd(BOSS_LINES.giveBack));
+      this.fly('<i class="ci"></i>', $('#bEmo'), $('#aPet'), 'ink', 650, -90).then(() => {
+        (coin || $('#aBoss .ab-coin') || { remove() {} }).remove();
+        if (L && L.mode === 'boss') { this.float(`+${back + 2}`, $('#aPet'), ''); Sound.play('coin'); }
+      });
+    }
+    if (L.event && L.event.type === 'star') {
+      L.event = null;
+      const st = $('#aFx .evstar');
+      if (L.hearts < 3) {
+        L.hearts++;
+        this.fly('⭐', st || $('#bEmo'), $('#hearts'), 'heartshot', 700, -70).then(() => {
+          if (!L || L.mode !== 'boss') return;
+          this.hearts(); this.re($('#hearts'), 'bump'); Sound.play('pet');
+        });
+      }
+      if (st) st.remove();
+    }
+    if (L.event && L.event.type === 'fly') L.event = null;
+  },
+
   /* ---------- Приёмы боссов ---------- */
   trick() {
     if (!L || L.mode !== 'boss' || L.finished || L.answered) return;
-    const id = L.world.boss.id, fx = BOSS_FX[id] || { t: 'waves' };
-    if (BOSS_LINES.trick[id]) this.bossSay(U.rnd(BOSS_LINES.trick[id]));
+    const id = L.world.boss.id;
+    let fx = BOSS_FX[id] || { t: 'waves' };
+    /* во второй фазе босс иногда показывает «новый приём» — чужой, из грозовой тучи */
+    if (L.phase2 && Math.random() < 0.35) {
+      fx = U.rnd([{ t: 'waves' }, { t: 'sparks' }, { t: 'rocks', g: '🪨' }]);
+      this.bossSay(U.rnd(BOSS_LINES.trick2));
+    } else if (BOSS_LINES.trick[id]) this.bossSay(U.rnd(BOSS_LINES.trick[id]));
     this.re($('#aBoss'), 'cast');
     (this.T[fx.t] || this.T.waves).call(this, fx);
   },
@@ -354,7 +502,7 @@ const Boss = {
       if ($('#aFx .bite')) return;
       this.fxEl('bite ' + U.rnd(['left', 'right']));
       L.biteLeft = 2;
-      [0, 0.15, 0.3].forEach(s => this.later(() => this.noise(0.08, 900, 0.14, 'lowpass'), s * 1000));
+      [0, 0.15, 0.3].forEach(s => Boss.later(() => this.noise(0.08, 900, 0.14, 'lowpass'), s * 1000));
     },
     hiss() {
       const r = this.bodyRect();
@@ -369,12 +517,12 @@ const Boss = {
       this.noise(1.2, 400, 0.05, 'lowpass');
     },
     rocks(fx, stomp = false) {
-      const g = Array.from(fx.g || '🪨');
+      const g = (fx.g || '🪨').match(/\p{Extended_Pictographic}️?/gu) || ['🪨'];   // по значкам, вместе с невидимым «эмодзи-видом» (U+FE0F)
       for (let i = 0; i < 7; i++) {
         this.fxEl('rock', `left:${8 + Math.random() * 84}%;animation-delay:${i * 0.13}s;font-size:${30 + Math.random() * 22}px;--r:${Math.random() * 360}deg`, U.rnd(g), 2300);
-        this.later(() => Sound.tone(110 + Math.random() * 60, 0, 0.12, 'sine', 0.15), 700 + i * 130);
+        Boss.later(() => Sound.tone(110 + Math.random() * 60, 0, 0.12, 'sine', 0.15), 700 + i * 130);
       }
-      if (stomp) [0, 450, 900].forEach(d => this.later(() => { this.re(this.ov(), 'quake'); Sound.tone(70, 0, 0.25, 'sine', 0.25); }, d));
+      if (stomp) [0, 450, 900].forEach(d => Boss.later(() => { this.re(this.ov(), 'quake'); Sound.tone(70, 0, 0.25, 'sine', 0.25); }, d));
     },
     stomp(fx) { this.T.rocks.call(this, fx, true); },
     sparks() {
@@ -386,11 +534,11 @@ const Boss = {
       for (let i = 0; i < 5; i++) Sound.tone(1200 + Math.random() * 900, i * 0.08, 0.05, 'square', 0.05);
     },
     shuffle() {
-      const box = $('#lBody .opts');
-      const opts = box ? $$('.opt', box).filter(b => !b.disabled) : [];
+      const box = $('#lBody .opts') || $('#lBody .multi-grid');   // «выбери все» тоже перемешивается
+      const opts = box ? $$('.opt, .multi-card', box).filter(b => !b.disabled) : [];
       if (opts.length < 2) { this.T.waves.call(this); return; }
       this.re(box, 'swirl');
-      this.later(() => { if (L && !L.answered) U.shuffle([...box.children]).forEach(c => box.appendChild(c)); }, 320);
+      Boss.later(() => { if (L && !L.answered) U.shuffle([...box.children]).forEach(c => box.appendChild(c)); }, 320);
       this.tones([[500, 0, 0.08], [700, 0.08, 0.08], [400, 0.16, 0.08], [800, 0.24, 0.12]], 'triangle', 0.08);
     },
     ghost() {
@@ -436,9 +584,9 @@ const Boss = {
       };
       cv.addEventListener('pointerdown', rub);
       cv.addEventListener('pointermove', ev => { if (ev.buttons || ev.pointerType === 'touch') rub(ev); });
-      this.later(finish, 25000);
+      Boss.later(finish, 25000);
       this.noise(0.2, 500, 0.15, 'lowpass');
-      if (!L.blotTold) { L.blotTold = true; this.later(() => this.petSay('Сотри кляксу пальцем!'), 1200); }
+      if (!L.blotTold) { L.blotTold = true; Boss.later(() => this.petSay('Сотри кляксу пальцем!'), 1200); }
     },
   },
   ink(c, w, h) {
@@ -452,15 +600,17 @@ const Boss = {
   defeat(cb) {
     L.defeating = true;
     const ab = $('#aBoss'), b = $('#bEmo');
-    this.later(() => {
+    Boss.later(() => {
       if (!L) return;
       this.bossSay(U.rnd(BOSS_LINES.down));
       ab.classList.remove('angry', 'scared', 'shielded');
+      this.ov().classList.remove('phase2');
+      $$('#aBoss .ab-weak, #aBoss .ab-coin').forEach(x => x.remove());
       ab.querySelector('.ab-mood').textContent = '';
       b.classList.remove('hit'); b.classList.add('spin');
       this.tones([[600, 0, 0.15], [500, 0.15, 0.15], [400, 0.3, 0.15], [300, 0.45, 0.3]], 'triangle', 0.1);
     }, 650);
-    this.later(() => {
+    Boss.later(() => {
       if (!L) return;
       const [x, y] = this.center(b);
       Sound.play('pop'); this.noise(0.3, 1500, 0.15);
@@ -474,8 +624,8 @@ const Boss = {
       confetti(110); Sound.play('level');
       this.setPet('laugh');
     }, 1850);
-    this.later(() => { if (L) this.bossSay(U.rnd(BOSS_LINES.free)); }, 2500);
-    this.later(() => { if (L && !L.finished) cb(); }, 4600);
+    Boss.later(() => { if (L) this.bossSay(U.rnd(BOSS_LINES.free)); }, 2500);
+    Boss.later(() => { if (L && !L.finished) cb(); }, 4600);
   },
   /* Сундук: монеты или редкий предмет. Первая победа — щедрее, и из сундука может выпасть редкий подарок */
   chestPrize(first, wi) {
@@ -500,10 +650,10 @@ const Boss = {
     if (!c || c.classList.contains('open') || !L || !L.chest) return;
     c.classList.add('open');
     $('#chPrize').textContent = L.chest.icon;
-    Sound.play('coin'); this.later(() => Sound.play('star'), 250, L, true);
+    Sound.play('coin'); setTimeout(() => Sound.play('star'), 250);
     const tip = $('.chest-tip'); if (tip) tip.remove();
     const after = $('.after-chest');
-    if (after) { after.hidden = false; this.later(() => { const b = after.querySelector('.btn'); if (b && b.isConnected) b.scrollIntoView({ behavior: 'smooth', block: 'end' }); }, 700, L, true); }
+    if (after) { after.hidden = false; setTimeout(() => { const b = after.querySelector('.btn'); if (b) b.scrollIntoView({ behavior: 'smooth', block: 'end' }); }, 700); }
     confetti(60);
   },
 };

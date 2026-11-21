@@ -67,7 +67,6 @@ const Speech = {
   available: () => 'speechSynthesis' in window,
   /* Английский звучит, если есть записи (EnVoice) или системный английский голос */
   enOk() { return EnVoice.ready() || (this.available() && !!this.enVoice); },
-  canSayEn(text) { return !!this.enVoice || !!(EnVoice.pack && EnVoice.pack[EnVoice.key(text)]); },
   /* Английская речь звучит всегда (это часть задания), даже если озвучка русских заданий выключена */
   sayEn(text, slow = false) {
     EnVoice.stop();

@@ -12,16 +12,21 @@ const depthK = y => 0.82 + 0.18 * Math.max(0, Math.min(1, (y - FOOT_MIN) / (FOOT
 const wait = ms => new Promise(r => setTimeout(r, ms));
 
 const Room = {
-  root: null, inner: null, petEl: null, s: 1, gen: 0,
+  root: null, inner: null, petEl: null, s: 1, gen: 0, scene: 'room',   // scene: room | yard (двор — js/yard.js)
   pet: { x: 320, y: 352, dir: 1 },
   busy: false, idleT: null, hide: null, taps: [],
 
   /* ---------- Положение предметов ---------- */
   pos(i) {
-    const p = House.positions()[i.id];
+    const p = S.room.pos[i.id];
     return p ? { x: p[0], y: p[1] } : { x: i.x, y: i.y };
   },
-  decor() { return House.allDecor().filter(i => !S.hidden[i.id] && House.itemRoom(i.id) === House.room().id); },
+  decor() {
+    if (Room.scene === 'yard') return [];
+    const d = [...SHOP, ...EXCLUSIVE, ...BOSS_TOYS].filter(i => i.cat === 'decor' && S.owned[i.id] && !S.hidden[i.id]);
+    if (S.life && S.life.artLast) d.push(MYART);   // раскрашенная картина на стене
+    return d;
+  },
   night() {
     const from = S.settings.sleepFrom;
     if (!from) return false;
@@ -31,7 +36,7 @@ const Room = {
 
   itemHTML(i) {
     const p = Room.pos(i);
-    const inner = i.gallery ? Play.preview(i.gallery) : i.tank ? `<div class="tank" style="width:${i.h}px;height:${Math.round(i.h * 0.72)}px"><span class="fish f1">🐠</span><span class="fish f2">🐟</span><span class="fish f3">🐡</span><i class="bub b1"></i><i class="bub b2"></i></div>` : i.icon;
+    const inner = i.art ? Art.mini() : i.tank ? `<div class="tank" style="width:${i.h}px;height:${Math.round(i.h * 0.72)}px"><span class="fish f1">🐠</span><span class="fish f2">🐟</span><span class="fish f3">🐡</span><i class="bub b1"></i><i class="bub b2"></i></div>` : i.icon;
     return `<div class="ri z-${i.zone}" data-id="${i.id}" style="${Room.itemStyle(i, p)}">${inner}</div>`;
   },
   itemStyle(i, p) {
@@ -41,9 +46,11 @@ const Room = {
   },
 
   html() {
-    const night = Room.night();
-    return `<div class="room room-${House.room().id} ${House.editing ? 'editing' : ''} ${night ? 'night' : ''}" id="room"><div class="room-in" id="roomIn">
-      <div class="wall"></div><div class="window"><div class="sky">${night ? '<span class="moon">🌙</span><i class="st s1"></i><i class="st s2"></i><i class="st s3"></i>' : '<span class="sun">☀️</span><span class="cloud">☁️</span>'}</div></div>
+    if (Room.scene === 'yard') return Yard.html();
+    const night = Room.night(), dp = Life.dayPart(), w = Life.weather();
+    const fall = night ? '' : w === 'rain' ? Yard.drops('i', 10) : w === 'snow' ? Yard.drops('b', 10) : '';
+    return `<div class="room dp-${dp} w-${w} ${night ? 'night' : ''}" id="room"><div class="room-in" id="roomIn">
+      <div class="wall"></div><div class="window"><div class="sky">${night ? '<span class="moon">🌙</span><i class="st s1"></i><i class="st s2"></i><i class="st s3"></i>' : `${w === 'sun' || w === 'wind' ? '<span class="sun">☀️</span>' : ''}<span class="cloud">☁️</span><div class="y-fall">${fall}</div>`}</div></div>
       <div class="floor"></div>
       ${Room.decor().map(Room.itemHTML).join('')}
       <div class="rpet" id="rpet"><div class="rp-flip"><div class="rp-act">${petSVG({ uid: 'rp', mood: night && petStage() > 0 ? 'sleep' : undefined })}</div></div></div>
@@ -59,9 +66,10 @@ const Room = {
     if (!Room.root) return;
     Room.busy = false; Room.hide = null;
     Room.fit();
-    const bed = ITEMS.bed && S.owned.bed && !S.hidden.bed && House.itemRoom('bed') === House.room().id ? Room.pos(ITEMS.bed) : null;
+    const bed = ITEMS.bed && S.owned.bed && !S.hidden.bed ? Room.pos(ITEMS.bed) : null;
     if (Room.night() && petStage() > 0 && bed) { Room.pet.x = bed.x; Room.pet.y = bed.y - 2; Room.pet.onTop = true; } else Room.pet.onTop = false;
     if (petStage() === 0) { Room.pet.x = 320; Room.pet.y = 352; }
+    if (Room.scene === 'yard') { Room.pet.onTop = false; Room.pet.x = 330; Room.pet.y = Room.night() ? 318 : 300; }   // во дворе — между грядками и качелями
     Room.place(0);
     Room.root.addEventListener('pointerdown', Room.onDown);
     Room.root.addEventListener('pointermove', Room.onLook);
@@ -69,12 +77,13 @@ const Room = {
     Room.scheduleIdle();
     if (!Room.night()) Room.greet();
     Room.root.classList.toggle('sleeping', Room.night() && petStage() > 0);
+    if (Room.scene === 'yard') Yard.mounted();
   },
   unmount() {
     clearTimeout(Room.idleT);
     window.removeEventListener('resize', Room.fit);
     Room.gen++;
-    Room.root = null; Room.drag = false;
+    Room.root = null;
   },
   alive(g) { return g === Room.gen && Room.root && document.body.contains(Room.root); },
   fit() {
@@ -121,7 +130,6 @@ const Room = {
     if (cls) { void a.offsetWidth; a.classList.add(cls); }
   },
   say(text, voice = false, whisper = false) {
-    if (modalOpen > 0 || document.querySelector('.lesson-ov')) return;
     const b = $('#petSay');
     if (!b || !Room.root) return;
     const k = depthK(Room.pet.y);
@@ -161,6 +169,9 @@ const Room = {
     const n = S.name || 'друг';
     const t = U.rnd([`Привет, ${n}! Ура, мы снова вместе!`, `${n}, привет! Как здорово, что ты здесь!`, `Привет, ${n}! Поиграем?`]);
     setTimeout(() => { if (Room.root) { Room.draw('love'); Room.anim('a-jump'); Room.hearts(); Room.say(t, true); setTimeout(() => Room.root && Room.draw(), 1800); } }, 400);
+    /* питомец вспоминает общий успех (память — js/yard.js) */
+    const m = Life.memLine();
+    if (m) setTimeout(() => { if (Room.root && !Room.busy) Room.say(m, true); }, 4200);
   },
 
   /* ---------- Сам по себе: раз в 14–22 секунды что-нибудь делает ---------- */
@@ -173,7 +184,10 @@ const Room = {
     if (!Room.alive(g)) return;
     if (Room.busy || Room.drag || Room.hide || modalOpen > 0 || $('.overlay') || document.visibilityState !== 'visible' || petStage() === 0 || Room.night()) { Room.scheduleIdle(); return; }
     const toys = Room.decor().filter(i => i.play && petStage() >= (i.ps || 1));
-    if (toys.length && Math.random() < 0.65) await Room.playWith(U.rnd(toys).id, false);
+    const wish = Life.pendingWish();
+    if (wish && Math.random() < 0.2) { Room.anim('a-wave'); Room.say(wish.say, true); setTimeout(() => Room.alive(g) && Room.anim(''), 1600); }
+    else if (Room.scene === 'yard') await Yard.idle();
+    else if (toys.length && Math.random() < 0.65) await Room.playWith(U.rnd(toys).id, false);
     else await Room.idleAct();
     if (Room.alive(g)) Room.scheduleIdle();
   },
@@ -221,12 +235,15 @@ const Room = {
   async playWith(id, byChild = true) {
     const i = ITEMS[id];
     if (!i || !Room.root) return;
-    if (byChild && i.station) { House.openStation(i.station); return; }
     const st = petStage();
     if (st === 0) { Room.itemFx(id, 'wiggle'); return; }
     if (Room.night()) { Room.itemFx(id, 'wiggle'); Room.say('Тсс… Сейчас ночь, игрушки тоже спят.', byChild, true); return; }
     if (Room.busy) return;
+    /* подарки-действия: мольберт — раскраска, книжки — сказки (js/yard.js) */
+    if (byChild && id === 'easel') { Room.itemFx(id, 'wiggle'); Art.open(); return; }
+    if (byChild && id === 'books') { Room.itemFx(id, 'wiggle'); Story.open(); return; }
     if (st < (i.ps || 1)) { Room.itemFx(id, 'wiggle'); Room.say('Это пока сложно для меня. Подрасту — научусь!', byChild); return; }
+    if (byChild) { Life.touch(); if (id !== 'ball') Life.done('toy'); }
     const g = Room.gen;
     Room.busy = true;
     clearTimeout(Room.idleT);
@@ -241,6 +258,7 @@ const Room = {
     if (Room.alive(g)) { Room.draw(); Room.anim(''); Room.pet.onTop = false; Room.place(0); }
     S.counters.play = (S.counters.play || 0) + 1;
     if (S.counters.play % 10 === 0) { checkAch(); save(); setTimeout(flushQueue, 300); }
+    if (!Room.alive(g)) return;   // ушли с экрана — занятость новой сцены не трогаем
     Room.busy = false;
     Room.scheduleIdle();
   },
@@ -291,7 +309,7 @@ const Room = {
         break;
       }
       case 'look': Room.draw('wow'); Room.itemFx(i.id, 'glow', 2400);
-        say({ fish: 'Привет, рыбки! Буль-буль!', telescope: 'Вижу Луну и звёзды!', picture: 'Какая красивая картина!', kite: 'Как красиво развеваются!', x_planet: 'Это Сатурн! У него кольца!', x_crystal: 'Шар показывает… пятёрку!' }[i.id] || 'Как интересно!');
+        say({ fish: 'Привет, рыбки! Буль-буль!', telescope: 'Вижу Луну и звёзды!', picture: 'Какая красивая картина!', kite: 'Как красиво развеваются!', x_planet: 'Это Сатурн! У него кольца!', x_crystal: 'Шар показывает… пятёрку!', myart: YARD_SAY.myart }[i.id] || 'Как интересно!');
         if (i.id === 'telescope') ['🌙', '⭐', '🪐'].forEach((c, n) => setTimeout(() => Room.fx(c, ip.x + 30, ip.y - i.h - 10, 'fx-rise', 1500), n * 400));
         else Room.fx('✨', ip.x, ip.y - (i.zone === 'floor' ? i.h : i.h / 2), 'fx-rise');
         await wait(2500); break;
@@ -362,8 +380,9 @@ const Room = {
     const it = ev.target.closest('.ri');
     const onPet = ev.target.closest('.rpet');
     const start = Room.toRoom(ev);
+    const yo = ev.target.closest('.yo');   // предметы двора (js/yard.js)
+    if (yo && !Room.hide) { ev.preventDefault(); Yard.tap(yo.dataset.yo); return; }
     if (it) { Room.startDrag(ev, it, start); return; }
-    if (House.editing) return;
     if (onPet) { Room.petTouch(ev, start); return; }
     /* пустой пол — питомец идёт туда */
     if (start.y > FLOOR_Y && !Room.busy && !Room.hide && petStage() > 0 && !Room.night()) {
@@ -377,7 +396,6 @@ const Room = {
     if (!i) return;
     ev.preventDefault();
     const p0 = Room.pos(i);
-    const positions = House.positions();
     const off = { x: p0.x - start.x, y: p0.y - start.y };
     const trail = [{ x: start.x, y: start.y, t: performance.now() }];
     let moved = false;
@@ -395,11 +413,11 @@ const Room = {
       el.removeEventListener('pointermove', move); el.removeEventListener('pointerup', up); el.removeEventListener('pointercancel', up);
       el.classList.remove('dragging');
       Room.drag = false;
-      if (!moved) { if (House.editing) { House.inventory(i.id); return; } if (Room.hide) Room.seek(i.id); else Room.playWith(i.id, true); return; }
+      if (!moved) { if (Room.hide) Room.seek(i.id); else Room.playWith(i.id, true); return; }
       const a = trail[0], b = trail[trail.length - 1], dt = Math.max(1, b.t - a.t);
       const vx = (b.x - a.x) / dt, vy = (b.y - a.y) / dt;
-      if (!House.editing && i.id === 'ball' && Math.hypot(vx, vy) > 0.5 && !Room.night()) { Room.throwBall(el, el._p || p0, vx, vy); return; }
-      if (el._p) { positions[i.id] = [Math.round(el._p.x), Math.round(el._p.y)]; save(); }
+      if (i.id === 'ball' && Math.hypot(vx, vy) > 0.5 && !Room.night()) { Room.throwBall(el, el._p || p0, vx, vy); return; }
+      if (el._p) { S.room.pos[i.id] = [Math.round(el._p.x), Math.round(el._p.y)]; save(); }
     };
     el.addEventListener('pointermove', move); el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
   },
@@ -436,10 +454,10 @@ const Room = {
     void bounces;
   },
   async fetch(el, x, y, g) {
-    if (!Room.alive(g)) return;
-    House.positions().ball = [Math.round(x), Math.round(y)]; save();
+    S.room.pos.ball = [Math.round(x), Math.round(y)]; save();
     if (Room.busy || petStage() === 0) return;
     Room.busy = true; clearTimeout(Room.idleT);
+    Life.touch(); Life.done('ball');
     const side = Room.pet.x < x ? -1 : 1;
     if (!await Room.walkTo(x + side * 50, y, g)) { Room.busy = false; return; }
     Room.pet.dir = -side; Room.place(0);
@@ -449,7 +467,7 @@ const Room = {
     await wait(900); if (!Room.alive(g)) return;
     const nx = Math.max(80, Math.min(ROOM_W - 80, Room.pet.x - side * 40));
     el.style.left = nx + 'px'; el.style.top = Math.min(FOOT_MAX, y + 6) + 'px';
-    House.positions().ball = [Math.round(nx), Math.round(Math.min(FOOT_MAX, y + 6))]; save();
+    S.room.pos.ball = [Math.round(nx), Math.round(Math.min(FOOT_MAX, y + 6))]; save();
     setTimeout(() => { el.style.transition = ''; }, 500);
     S.counters.play = (S.counters.play || 0) + 1;
     await wait(600);
@@ -496,11 +514,17 @@ const Room = {
     window.addEventListener('pointerup', up);
   },
   async react(kind) {
-    if (Room.busy && kind !== 'stroke') return;
+    if (Room.busy) {
+      /* питомец занят (качели, игра): поглаживание — только сердечки, без сброса занятости */
+      if (kind === 'stroke') { Room.hearts(3); Room.purr(); Life.done('pat'); }
+      return;
+    }
     const g = Room.gen;
     Room.busy = true; clearTimeout(Room.idleT);
     const hy = Room.headY();
     S.counters.play = (S.counters.play || 0) + 1;
+    Life.touch();
+    if (kind === 'stroke' || kind === 'pat') Life.done('pat');
     switch (kind) {
       case 'stroke': Room.draw('love'); Room.hearts(4); Room.say(U.rnd(['Мррр… Как приятно!', 'Ещё погладь, пожалуйста!', 'Мур-мур-мур!']), true); Room.purr(); await wait(1800); break;
       case 'pat': Room.draw('sleep'); Room.anim('a-nod'); Room.say(U.rnd(['Мррр…', 'Как приятно, когда гладят по голове!', 'Ещё-ещё!']), true); Room.purr(); Room.hearts(2); await wait(1600); break;
